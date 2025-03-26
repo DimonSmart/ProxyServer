@@ -1,0 +1,9 @@
+{
+  "AllowedCredentials": [
+    {
+      "IPs": [ "127.0.0.1", "::1", "192.168.*.*" ],
+      "Passwords": [ "testpass", "anotherpass" ]
+    }
+  ],
+  "UpstreamUrl": "http://localhost:11434"
+}
