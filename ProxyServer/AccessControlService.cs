@@ -14,7 +14,7 @@ public class AccessControlService
 
     public (bool isAllowed, int statusCode, string? errorMessage) Validate(HttpContext context)
     {
-        var remoteIp = context.Connection.RemoteIpAddress;
+        var remoteIp = context.Connection.RemoteIpAddress?.MapToIPv4();
         if (remoteIp == null)
         {
             return (false, StatusCodes.Status403Forbidden, "Forbidden: Cannot determine remote IP");

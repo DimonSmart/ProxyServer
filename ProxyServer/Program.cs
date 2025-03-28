@@ -25,7 +25,11 @@ if (settings.UseMemoryCache)
 builder.Services.AddSingleton(settings);
 builder.Services.AddSingleton<AccessControlService>();
 
-builder.WebHost.ConfigureKestrel(o => o.ListenAnyIP(5000));
+builder.WebHost.ConfigureKestrel(o => o.ListenAnyIP(5000, listenOptions =>
+{
+    // Используем созданный PFX-файл и пароль
+    listenOptions.UseHttps("dimon2.pfx", "nomid");
+}));
 var app = builder.Build();
 
 // Access control middleware using the AccessControlService.
