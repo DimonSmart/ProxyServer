@@ -423,6 +423,12 @@ $RECYCLE.BIN/
 .idea/
 *.sln.iml
 
+# Proxy cache database files
+ProxyServer/cache/
+*.db
+*.sqlite
+*.sqlite3
+
 ##
 ## Visual Studio Code
 ##
