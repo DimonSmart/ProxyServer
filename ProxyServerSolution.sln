@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DimonSmart.ProxyServer", "ProxyServer\DimonSmart.ProxyServer.csproj", "{8F6E87DB-F23F-43B4-9F64-BE3B79C829BA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProxyServer.FunctionalTests", "ProxyServer.FunctionalTests\ProxyServer.FunctionalTests.csproj", "{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,18 @@ Global
 		{8F6E87DB-F23F-43B4-9F64-BE3B79C829BA}.Release|x64.Build.0 = Release|Any CPU
 		{8F6E87DB-F23F-43B4-9F64-BE3B79C829BA}.Release|x86.ActiveCfg = Release|Any CPU
 		{8F6E87DB-F23F-43B4-9F64-BE3B79C829BA}.Release|x86.Build.0 = Release|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Debug|x64.Build.0 = Debug|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Debug|x86.Build.0 = Debug|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Release|x64.ActiveCfg = Release|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Release|x64.Build.0 = Release|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Release|x86.ActiveCfg = Release|Any CPU
+		{B2E8F5E1-4A3B-4C7D-9E1F-3A2B5C6D8E9F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
