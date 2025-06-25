@@ -15,8 +15,8 @@
   "CertificatePassword": "",
   "StreamingCache": {
     "EnableStreamingCache": true,
-    "ChunkSize": 64,
-    "ChunkDelayMs": 1000
+    "ChunkSize": 128,
+    "ChunkDelayMs": 10
   },
   "DiskCache": {
     "CachePath": "./cache/proxy_cache.db",
