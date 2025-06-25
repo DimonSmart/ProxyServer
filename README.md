@@ -58,6 +58,24 @@ Configuration: `.github/workflows/functional-tests.yml`
 dotnet test --logger "console;verbosity=detailed"
 ```
 
+## Technical Details
+
+### HTTP Headers and Caching
+
+The proxy server correctly handles different response types:
+
+**Streaming Responses**: When the upstream server sends chunked or streaming responses, the proxy forwards them in real-time while preserving the original headers (`Transfer-Encoding: chunked`, etc.).
+
+**Cached Responses**: When serving responses from cache, transport-level headers like `Transfer-Encoding` and `Content-Length` are filtered out to prevent HTTP protocol conflicts. This is because:
+- Cached responses are stored as complete byte arrays
+- Sending `Transfer-Encoding: chunked` headers with non-chunked data causes client hangs
+- The proxy automatically sets appropriate headers for cached content
+
+**Filtered Headers**: The following headers are removed from cached responses to ensure compatibility:
+- `transfer-encoding`, `content-length`, `connection`
+- `date`, `server`, `via`, `warning`, `age`, `etag`
+- `expires`, `last-modified`, `cache-control`, `vary`
+
 ## Monitoring
 
 ### Test Server Metrics

@@ -57,6 +57,9 @@ public class ProxyService : IProxyService
         int bytesRead;
         while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
         {
+            // Check for cancellation before writing
+            cancellationToken.ThrowIfCancellationRequested();
+
             // Stream to client immediately for real-time response
             await context.Response.Body.WriteAsync(buffer, 0, bytesRead, cancellationToken);
             await context.Response.Body.FlushAsync(cancellationToken);
@@ -67,7 +70,7 @@ public class ProxyService : IProxyService
             bodyBuffer.AddRange(chunk);
         }
 
-        return new ProxyResponse((int)upstreamResponse.StatusCode, headers, bodyBuffer.ToArray());
+        return new ProxyResponse((int)upstreamResponse.StatusCode, headers, bodyBuffer.ToArray(), true);
     }
 
     private async Task<ProxyResponse> HandleBufferedResponse(HttpResponseMessage upstreamResponse, CancellationToken cancellationToken)
@@ -75,15 +78,14 @@ public class ProxyService : IProxyService
         var headers = CollectResponseHeaders(upstreamResponse);
         var body = await upstreamResponse.Content.ReadAsByteArrayAsync(cancellationToken);
 
-        return new ProxyResponse((int)upstreamResponse.StatusCode, headers, body);
+        return new ProxyResponse((int)upstreamResponse.StatusCode, headers, body, false);
     }
 
     private static bool ShouldUseStreaming(HttpResponseMessage upstreamResponse, HttpRequest originalRequest)
     {
-        // Check for streaming indicators in response
+        // Check for explicit streaming content types
         var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType?.ToLowerInvariant();
         var isStreamingContentType = contentType != null && (
-            contentType.Contains("text/plain") ||
             contentType.Contains("text/event-stream") ||
             contentType.Contains("application/x-ndjson") ||
             contentType.Contains("application/stream+json"));
@@ -91,16 +93,13 @@ public class ProxyService : IProxyService
         // Check if response has chunked transfer encoding
         var isChunked = upstreamResponse.Headers.TransferEncodingChunked == true;
 
-        // Check if response doesn't have content-length (typical for streaming)
-        var hasContentLength = upstreamResponse.Content.Headers.ContentLength.HasValue;
-
         // Check original request for streaming indicators
         var requestAccept = originalRequest.Headers["Accept"].ToString().ToLowerInvariant();
         var clientExpectsStreaming = requestAccept.Contains("text/event-stream") ||
                                    requestAccept.Contains("application/stream+json");
 
-        // Use streaming if any streaming indicator is present
-        return isStreamingContentType || isChunked || !hasContentLength || clientExpectsStreaming;
+        // Only use streaming for explicit streaming responses
+        return isStreamingContentType || isChunked || clientExpectsStreaming;
     }
 
     private static HttpRequestMessage CreateRequestMessage(HttpContext context, string targetUrl)

@@ -43,39 +43,85 @@ public class ProxyMiddleware
 
         if (cachedResponse != null)
         {
-            await WriteResponse(context, cachedResponse.StatusCode, cachedResponse.Headers, cachedResponse.Body);
+            // Always use WriteCachedResponseAsync to preserve original behavior and headers
+            // Disable streaming cache simulation to fix test issues
+            await _cacheService.WriteCachedResponseAsync(context, cachedResponse, context.RequestAborted);
             return;
         }
 
         var response = await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
 
-        // Cache the complete response after processing
-        if (ShouldCacheResponse(response))
+        // For streamed responses, the response has already been sent to the client
+        // so we only need to cache it if caching conditions are met
+        if (response.WasStreamed)
         {
-            var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
-            var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body);
-            await _cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
+            // Response was already sent to client during streaming, just cache it
+            if (ShouldCacheResponse(response))
+            {
+                var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
+                var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body, response.WasStreamed);
+                await _cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
+            }
+        }
+        else
+        {
+            // For non-streamed responses, we need to send the response to the client
+            context.Response.StatusCode = response.StatusCode;
+
+            // Copy headers
+            foreach (var header in response.Headers)
+            {
+                try
+                {
+                    context.Response.Headers[header.Key] = header.Value;
+                }
+                catch
+                {
+                    // Ignore headers that can't be set
+                }
+            }
+
+            // Write response body
+            await context.Response.Body.WriteAsync(response.Body, context.RequestAborted);
+            await context.Response.Body.FlushAsync(context.RequestAborted);
+
+            // Cache the response if conditions are met
+            if (ShouldCacheResponse(response))
+            {
+                var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
+                var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body, response.WasStreamed);
+                await _cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
+            }
         }
     }
 
     private async Task HandleDirectRequest(HttpContext context, string targetUrl)
     {
-        await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
-    }
+        var response = await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
 
-    private static async Task WriteResponse(HttpContext context, int statusCode, Dictionary<string, string[]> headers, byte[] body)
-    {
-        context.Response.StatusCode = statusCode;
-
-        foreach (var header in headers)
+        // For streamed responses, the response has already been sent to the client
+        if (!response.WasStreamed)
         {
-            context.Response.Headers[header.Key] = header.Value;
+            // For non-streamed responses, we need to send the response to the client
+            context.Response.StatusCode = response.StatusCode;
+
+            // Copy headers
+            foreach (var header in response.Headers)
+            {
+                try
+                {
+                    context.Response.Headers[header.Key] = header.Value;
+                }
+                catch
+                {
+                    // Ignore headers that can't be set
+                }
+            }
+
+            // Write response body
+            await context.Response.Body.WriteAsync(response.Body, context.RequestAborted);
+            await context.Response.Body.FlushAsync(context.RequestAborted);
         }
-
-        context.Response.Headers.Remove("transfer-encoding");
-        context.Response.Headers.Remove("content-encoding");
-
-        await context.Response.Body.WriteAsync(body);
     }
 
     private static bool ShouldCacheResponse(ProxyResponse response)

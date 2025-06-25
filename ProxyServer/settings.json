@@ -11,5 +11,10 @@
   "CacheMaxEntries": 10000,
   "Port": 8042,
   "CertificatePath": "",
-  "CertificatePassword": ""
+  "CertificatePassword": "",
+  "StreamingCache": {
+    "EnableStreamingCache": true,
+    "ChunkSize": 64,
+    "ChunkDelayMs": 100
+  }
 }

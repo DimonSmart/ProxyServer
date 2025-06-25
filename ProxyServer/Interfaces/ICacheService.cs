@@ -9,4 +9,6 @@ public interface ICacheService
     Task<string> GenerateCacheKeyAsync(HttpContext context);
     bool CanCache(HttpContext context);
     CacheStatistics GetStatistics();
+    Task StreamCachedResponseAsync(HttpContext context, CachedResponse cachedResponse, CancellationToken cancellationToken = default);
+    Task WriteCachedResponseAsync(HttpContext context, CachedResponse cachedResponse, CancellationToken cancellationToken = default);
 }
