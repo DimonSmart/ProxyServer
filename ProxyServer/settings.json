@@ -5,5 +5,11 @@
       "Passwords": [ "testpass", "anotherpass" ]
     }
   ],
-  "UpstreamUrl": "http://localhost:11434"
+  "UpstreamUrl": "http://localhost:11434",
+  "UseMemoryCache": true,
+  "CacheDurationSeconds": 60,
+  "CacheMaxEntries": 1000,
+  "Port": 5000,
+  "CertificatePath": "dimon2.pfx",
+  "CertificatePassword": "nomid"
 }
