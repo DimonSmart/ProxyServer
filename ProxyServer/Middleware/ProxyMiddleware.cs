@@ -50,16 +50,23 @@ public class ProxyMiddleware
         try
         {
             var response = await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
-            await WriteResponse(context, response.StatusCode, response.Headers, response.Body);
-
-            var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
-            var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body);
-            await _cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
+            
+            // Cache the complete response after processing
+            if (ShouldCacheResponse(response))
+            {
+                var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
+                var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body);
+                await _cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
+            }
         }
         catch (HttpRequestException ex)
         {
-            context.Response.StatusCode = StatusCodes.Status502BadGateway;
-            await context.Response.WriteAsync($"Bad Gateway: {ex.Message}");
+            // Only set status and write if response hasn't started
+            if (!context.Response.HasStarted)
+            {
+                context.Response.StatusCode = StatusCodes.Status502BadGateway;
+                await context.Response.WriteAsync($"Bad Gateway: {ex.Message}");
+            }
         }
     }
 
@@ -67,13 +74,17 @@ public class ProxyMiddleware
     {
         try
         {
-            var response = await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
-            await WriteResponse(context, response.StatusCode, response.Headers, response.Body);
+            // Use the unified proxy method that automatically determines streaming vs buffered mode
+            await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
         }
         catch (HttpRequestException ex)
         {
-            context.Response.StatusCode = StatusCodes.Status502BadGateway;
-            await context.Response.WriteAsync($"Bad Gateway: {ex.Message}");
+            // Only set status and write if response hasn't started
+            if (!context.Response.HasStarted)
+            {
+                context.Response.StatusCode = StatusCodes.Status502BadGateway;
+                await context.Response.WriteAsync($"Bad Gateway: {ex.Message}");
+            }
         }
     }
 
@@ -90,5 +101,11 @@ public class ProxyMiddleware
         context.Response.Headers.Remove("content-encoding");
 
         await context.Response.Body.WriteAsync(body);
+    }
+
+    private static bool ShouldCacheResponse(ProxyResponse response)
+    {
+        // Only cache successful responses (2xx status codes)
+        return response.StatusCode >= 200 && response.StatusCode < 300;
     }
 }
