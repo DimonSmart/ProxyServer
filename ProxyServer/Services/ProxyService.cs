@@ -44,23 +44,23 @@ public class ProxyService : IProxyService
     private async Task<ProxyResponse> HandleStreamingResponse(HttpContext context, HttpResponseMessage upstreamResponse, CancellationToken cancellationToken)
     {
         var headers = CollectResponseHeaders(upstreamResponse);
-        
+
         // Set response status and headers immediately for streaming
         context.Response.StatusCode = (int)upstreamResponse.StatusCode;
         CopyResponseHeaders(context, headers);
 
         var bodyBuffer = new List<byte>();
         var buffer = new byte[8192];
-        
+
         using var contentStream = await upstreamResponse.Content.ReadAsStreamAsync(cancellationToken);
-        
+
         int bytesRead;
         while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
         {
             // Stream to client immediately for real-time response
             await context.Response.Body.WriteAsync(buffer, 0, bytesRead, cancellationToken);
             await context.Response.Body.FlushAsync(cancellationToken);
-            
+
             // Collect data for caching purposes
             var chunk = new byte[bytesRead];
             Array.Copy(buffer, 0, chunk, 0, bytesRead);
@@ -96,7 +96,7 @@ public class ProxyService : IProxyService
 
         // Check original request for streaming indicators
         var requestAccept = originalRequest.Headers["Accept"].ToString().ToLowerInvariant();
-        var clientExpectsStreaming = requestAccept.Contains("text/event-stream") || 
+        var clientExpectsStreaming = requestAccept.Contains("text/event-stream") ||
                                    requestAccept.Contains("application/stream+json");
 
         // Use streaming if any streaming indicator is present
@@ -134,7 +134,7 @@ public class ProxyService : IProxyService
         if (ShouldCopyBody(context.Request.Method))
         {
             requestMessage.Content = new StreamContent(context.Request.Body);
-            
+
             // Copy Content-Type header if present
             var contentType = context.Request.Headers["Content-Type"].ToString();
             if (!string.IsNullOrEmpty(contentType))
@@ -206,10 +206,10 @@ public class ProxyService : IProxyService
         // Headers that shouldn't be copied during streaming to maintain transparency
         var restrictedHeaders = new[]
         {
-            "connection", "content-length", "transfer-encoding", "upgrade", 
+            "connection", "content-length", "transfer-encoding", "upgrade",
             "date", "server", "via", "warning"
         };
-        
+
         return restrictedHeaders.Contains(headerName.ToLowerInvariant());
     }
 }

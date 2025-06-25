@@ -1,8 +1,7 @@
-﻿using System.Text;
+﻿using DimonSmart.ProxyServer.Interfaces;
+using System.Text;
 using System.Text.RegularExpressions;
-using DimonSmart.ProxyServer.Interfaces;
-using DimonSmart.ProxyServer.Models;
-using Microsoft.Extensions.Logging;
+using static System.Net.Sockets.AddressFamily;
 
 namespace DimonSmart.ProxyServer.Services;
 
@@ -27,9 +26,7 @@ public class AccessControlService : IAccessControlService
 
         // Use the original IP address without mapping
         var remoteIp = remoteIpAddress.ToString();
-        _logger.LogInformation("Remote IP: {RemoteIP}, Is IPv6: {IsIPv6}", 
-            remoteIp, 
-            remoteIpAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6);
+        _logger.LogInformation("Remote IP: {RemoteIP}, Is IPv6: {IsIPv6}", remoteIp, remoteIpAddress.AddressFamily == InterNetworkV6);
 
         string? providedPassword = null;
         if (context.Request.Headers.ContainsKey("Authorization"))

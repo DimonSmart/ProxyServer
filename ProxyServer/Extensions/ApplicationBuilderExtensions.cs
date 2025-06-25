@@ -8,7 +8,7 @@ public static class ApplicationBuilderExtensions
 {
     public static IApplicationBuilder UseProxyServer(this IApplicationBuilder app)
     {
-        // Add routing for health check endpoints first
+        app.UseMiddleware<ExceptionHandlingMiddleware>();
         app.UseRouting();
         app.UseMiddleware<AccessControlMiddleware>();
 

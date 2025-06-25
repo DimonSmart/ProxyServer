@@ -47,45 +47,20 @@ public class ProxyMiddleware
             return;
         }
 
-        try
+        var response = await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
+
+        // Cache the complete response after processing
+        if (ShouldCacheResponse(response))
         {
-            var response = await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
-            
-            // Cache the complete response after processing
-            if (ShouldCacheResponse(response))
-            {
-                var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
-                var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body);
-                await _cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
-            }
-        }
-        catch (HttpRequestException ex)
-        {
-            // Only set status and write if response hasn't started
-            if (!context.Response.HasStarted)
-            {
-                context.Response.StatusCode = StatusCodes.Status502BadGateway;
-                await context.Response.WriteAsync($"Bad Gateway: {ex.Message}");
-            }
+            var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
+            var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body);
+            await _cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
         }
     }
 
     private async Task HandleDirectRequest(HttpContext context, string targetUrl)
     {
-        try
-        {
-            // Use the unified proxy method that automatically determines streaming vs buffered mode
-            await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
-        }
-        catch (HttpRequestException ex)
-        {
-            // Only set status and write if response hasn't started
-            if (!context.Response.HasStarted)
-            {
-                context.Response.StatusCode = StatusCodes.Status502BadGateway;
-                await context.Response.WriteAsync($"Bad Gateway: {ex.Message}");
-            }
-        }
+        await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
     }
 
     private static async Task WriteResponse(HttpContext context, int statusCode, Dictionary<string, string[]> headers, byte[] body)

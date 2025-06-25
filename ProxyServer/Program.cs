@@ -46,7 +46,7 @@ static void ConfigureWebHost(IWebHostBuilder webHost, ProxySettings settings)
                 listenOptions.UseHttps(settings.CertificatePath, settings.CertificatePassword);
             }
         });
-        
+
         // Listen on IPv6
         options.Listen(System.Net.IPAddress.IPv6Loopback, settings.Port, listenOptions =>
         {

@@ -356,7 +356,7 @@ public class ProxyServerFunctionalTests : IDisposable
         await ResetTestServerStats();
         var request = new ReverseRequest { Text = "Hello Streaming World" };
         var requestContent = CreateJsonContent(request);
-        
+
         var chunks = new List<(string Chunk, TimeSpan Timestamp)>();
         var startTime = DateTime.UtcNow;
 
@@ -365,19 +365,19 @@ public class ProxyServerFunctionalTests : IDisposable
         {
             Content = requestContent
         };
-        
+
         // Add Basic Auth header
         var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"user:{TestPassword}"));
         httpRequest.Headers.Add("Authorization", $"Basic {credentials}");
 
         // Act - Make request to streaming endpoint through proxy with HttpCompletionOption.ResponseHeadersRead
         using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead);
-        
+
         // Read response stream manually to capture streaming behavior
         using var stream = await response.Content.ReadAsStreamAsync();
         var buffer = new byte[512];
         var totalContent = new StringBuilder();
-        
+
         int bytesRead;
         while ((bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
         {
@@ -385,22 +385,22 @@ public class ProxyServerFunctionalTests : IDisposable
             var elapsed = DateTime.UtcNow - startTime;
             chunks.Add((chunk, elapsed));
             totalContent.Append(chunk);
-            
+
             _output.WriteLine($"Received chunk at {elapsed.TotalMilliseconds}ms: '{chunk}'");
         }
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        
+
         // The test should verify we get the streaming behavior, but if it comes as one chunk, that's also valid
         // What's important is that the content is correct and the proxy works
         var fullContent = totalContent.ToString();
         Assert.Contains("dlroW gnimaertS olleH", fullContent); // "Hello Streaming World" reversed
         Assert.Contains("[Call #1]", fullContent);
-        
+
         _output.WriteLine($"Full streaming response: {fullContent}");
         _output.WriteLine($"Received {chunks.Count} chunks over {(chunks.LastOrDefault().Timestamp.TotalMilliseconds):F1}ms");
-        
+
         // If we only got one chunk, it might be because the response was small or network was fast
         // This is still a valid test - the important thing is that streaming proxy works
         Assert.True(chunks.Count >= 1, "Should receive at least one chunk");
@@ -421,7 +421,7 @@ public class ProxyServerFunctionalTests : IDisposable
         using var firstResponse = await MakeProxyRequest("/api/StringReverse/stream", requestContent);
         var firstContent = await firstResponse.Content.ReadAsStringAsync();
         var firstStartTime = DateTime.UtcNow;
-        
+
         // Second request (should come from cache immediately)
         requestContent = CreateJsonContent(request);
         using var secondResponse = await MakeProxyRequest("/api/StringReverse/stream", requestContent);
@@ -432,11 +432,11 @@ public class ProxyServerFunctionalTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
         Assert.Equal(HttpStatusCode.OK, secondResponse.StatusCode);
         Assert.Equal(firstContent, secondContent);
-        
+
         // Cached response should be much faster (no streaming delay)
-        Assert.True(secondDuration.TotalMilliseconds < 500, 
+        Assert.True(secondDuration.TotalMilliseconds < 500,
             $"Cached response should be fast, but took {secondDuration.TotalMilliseconds}ms");
-            
+
         _output.WriteLine($"First response: {firstContent}");
         _output.WriteLine($"Second response served from cache in {secondDuration.TotalMilliseconds}ms");
     }
