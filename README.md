@@ -1,5 +1,7 @@
 # ProxyServer
 
+[![Functional Tests](https://github.com/DimonSmart/ProxyServer/actions/workflows/functional-tests.yml/badge.svg?branch=main)](https://github.com/DimonSmart/ProxyServer/actions/workflows/functional-tests.yml)
+
 Caching proxy server with authentication and access control.
 
 ## Features
