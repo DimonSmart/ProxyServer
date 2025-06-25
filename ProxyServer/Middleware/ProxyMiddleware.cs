@@ -3,30 +3,19 @@ using DimonSmart.ProxyServer.Models;
 
 namespace DimonSmart.ProxyServer.Middleware;
 
-public class ProxyMiddleware
+public class ProxyMiddleware(
+    RequestDelegate next,
+    IProxyService proxyService,
+    ICacheService cacheService,
+    ProxySettings settings)
 {
-    private readonly RequestDelegate _next;
-    private readonly IProxyService _proxyService;
-    private readonly ICacheService _cacheService;
-    private readonly ProxySettings _settings;
-
-    public ProxyMiddleware(
-        RequestDelegate next,
-        IProxyService proxyService,
-        ICacheService cacheService,
-        ProxySettings settings)
-    {
-        _next = next;
-        _proxyService = proxyService;
-        _cacheService = cacheService;
-        _settings = settings;
-    }
+    private readonly ProxySettings _settings = settings;
 
     public async Task InvokeAsync(HttpContext context)
     {
         var targetUrl = _settings.UpstreamUrl + context.Request.Path + context.Request.QueryString;
 
-        if (_cacheService.CanCache(context))
+        if (cacheService.CanCache(context))
         {
             await HandleCachedRequest(context, targetUrl);
         }
@@ -38,18 +27,24 @@ public class ProxyMiddleware
 
     private async Task HandleCachedRequest(HttpContext context, string targetUrl)
     {
-        var cacheKey = await _cacheService.GenerateCacheKeyAsync(context);
-        var cachedResponse = await _cacheService.GetAsync<CachedResponse>(cacheKey);
+        var cacheKey = await cacheService.GenerateCacheKeyAsync(context);
+        var cachedResponse = await cacheService.GetAsync<CachedResponse>(cacheKey);
 
         if (cachedResponse != null)
         {
-            // Always use WriteCachedResponseAsync to preserve original behavior and headers
-            // Disable streaming cache simulation to fix test issues
-            await _cacheService.WriteCachedResponseAsync(context, cachedResponse, context.RequestAborted);
+            // Use streaming cache if enabled and response was originally streamed
+            if (_settings.StreamingCache.EnableStreamingCache && cachedResponse.WasStreamed)
+            {
+                await cacheService.StreamCachedResponseAsync(context, cachedResponse, context.RequestAborted);
+            }
+            else
+            {
+                await cacheService.WriteCachedResponseAsync(context, cachedResponse, context.RequestAborted);
+            }
             return;
         }
 
-        var response = await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
+        var response = await proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
 
         // For streamed responses, the response has already been sent to the client
         // so we only need to cache it if caching conditions are met
@@ -60,7 +55,7 @@ public class ProxyMiddleware
             {
                 var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
                 var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body, response.WasStreamed);
-                await _cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
+                await cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
             }
         }
         else
@@ -90,14 +85,14 @@ public class ProxyMiddleware
             {
                 var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
                 var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body, response.WasStreamed);
-                await _cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
+                await cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
             }
         }
     }
 
     private async Task HandleDirectRequest(HttpContext context, string targetUrl)
     {
-        var response = await _proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
+        var response = await proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
 
         // For streamed responses, the response has already been sent to the client
         if (!response.WasStreamed)
