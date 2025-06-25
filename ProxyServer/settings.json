@@ -15,7 +15,7 @@
   "CertificatePassword": "",
   "StreamingCache": {
     "EnableStreamingCache": true,
-    "ChunkSize": 128,
+    "ChunkSize": 256,
     "ChunkDelayMs": 10
   },
   "DiskCache": {
