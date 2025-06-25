@@ -38,7 +38,7 @@ public class ProxyMiddleware
 
     private async Task HandleCachedRequest(HttpContext context, string targetUrl)
     {
-        var cacheKey = _cacheService.GenerateCacheKey(context);
+        var cacheKey = await _cacheService.GenerateCacheKeyAsync(context);
         var cachedResponse = await _cacheService.GetAsync<CachedResponse>(cacheKey);
 
         if (cachedResponse != null)

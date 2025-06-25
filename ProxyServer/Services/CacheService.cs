@@ -66,7 +66,7 @@ public class CacheService : ICacheService
         await Task.Run(() => _cache.Set(key, value, options));
     }
 
-    public string GenerateCacheKey(HttpContext context)
+    public async Task<string> GenerateCacheKeyAsync(HttpContext context)
     {
         var cacheKey = $"{context.Request.Method}:{context.Request.Path}{context.Request.QueryString}";
 
@@ -74,7 +74,7 @@ public class CacheService : ICacheService
         {
             context.Request.EnableBuffering();
             using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
-            var body = reader.ReadToEnd();
+            var body = await reader.ReadToEndAsync();
             context.Request.Body.Position = 0;
             var hash = SHA256.HashData(Encoding.UTF8.GetBytes(body));
             cacheKey += ":" + Convert.ToHexString(hash);
