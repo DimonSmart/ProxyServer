@@ -1,44 +1,39 @@
 using DimonSmart.ProxyServer.Interfaces;
 using DimonSmart.ProxyServer.Models;
-using Microsoft.Extensions.Caching.Memory;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace DimonSmart.ProxyServer.Services;
 
-public class CacheService : ICacheService
+/// <summary>
+/// Cache service that uses only disk storage (wrapper around IDiskCacheService to implement ICacheService)
+/// </summary>
+public class DiskOnlyCacheService : ICacheService
 {
-    private readonly IMemoryCache? _cache;
+    private readonly IDiskCacheService _diskCache;
     private readonly ProxySettings _settings;
+    private readonly ILogger<DiskOnlyCacheService> _logger;
     private long _totalRequests;
     private long _cacheHits;
     private long _cacheMisses;
     private readonly object _statsLock = new();
 
-    public CacheService(IMemoryCache? cache, ProxySettings settings)
+    public DiskOnlyCacheService(
+        IDiskCacheService diskCache,
+        ProxySettings settings,
+        ILogger<DiskOnlyCacheService> logger)
     {
-        _cache = cache;
+        _diskCache = diskCache;
         _settings = settings;
+        _logger = logger;
     }
 
     public async Task<T?> GetAsync<T>(string key) where T : class
     {
-        if (_cache == null)
-        {
-            lock (_statsLock)
-            {
-                _totalRequests++;
-                _cacheMisses++;
-            }
-            return null;
-        }
-
         lock (_statsLock)
         {
             _totalRequests++;
         }
 
-        var result = await Task.FromResult(_cache.TryGetValue(key, out T? value) ? value : null);
+        var result = await _diskCache.GetAsync<T>(key);
 
         lock (_statsLock)
         {
@@ -57,13 +52,7 @@ public class CacheService : ICacheService
 
     public async Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
     {
-        if (_cache == null) return;
-
-        var options = new MemoryCacheEntryOptions()
-            .SetAbsoluteExpiration(expiration)
-            .SetSize(1);
-
-        await Task.Run(() => _cache.Set(key, value, options));
+        await _diskCache.SetAsync(key, value, expiration);
     }
 
     public async Task<string> GenerateCacheKeyAsync(HttpContext context)
@@ -76,7 +65,8 @@ public class CacheService : ICacheService
             using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
             var body = await reader.ReadToEndAsync();
             context.Request.Body.Position = 0;
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(body));
+
+            var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(body));
             cacheKey += ":" + Convert.ToHexString(hash);
         }
 
@@ -85,7 +75,7 @@ public class CacheService : ICacheService
 
     public bool CanCache(HttpContext context)
     {
-        if (!_settings.EnableMemoryCache || _cache == null) return false;
+        if (!_settings.EnableDiskCache) return false;
 
         var isGetOrPost = context.Request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase) ||
                          context.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase);
@@ -100,37 +90,26 @@ public class CacheService : ICacheService
     {
         lock (_statsLock)
         {
-            var currentEntries = 0;
-            if (_cache is MemoryCache mc)
-            {
-                // Try to get current entry count using reflection as MemoryCache doesn't expose this directly
-                var field = typeof(MemoryCache).GetField("_coherentState",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (field?.GetValue(mc) is object coherentState)
-                {
-                    var countProp = coherentState.GetType().GetProperty("Count");
-                    if (countProp != null)
-                    {
-                        currentEntries = (int)(countProp.GetValue(coherentState) ?? 0);
-                    }
-                }
-            }
+            var diskEntries = _diskCache.GetCountAsync().GetAwaiter().GetResult();
 
             return new CacheStatistics
             {
                 TotalRequests = _totalRequests,
                 CacheHits = _cacheHits,
                 CacheMisses = _cacheMisses,
-                CurrentEntries = currentEntries,
+                CurrentEntries = diskEntries,
                 MaxEntries = _settings.CacheMaxEntries,
-                IsEnabled = _settings.EnableMemoryCache && _cache != null
+                IsEnabled = _settings.EnableDiskCache,
+                HotCacheHits = 0, // No hot cache in disk-only mode
+                DiskCacheHits = _cacheHits,
+                HotCacheEntries = 0,
+                DiskCacheEntries = diskEntries
             };
         }
     }
 
     public async Task StreamCachedResponseAsync(HttpContext context, CachedResponse cachedResponse, CancellationToken cancellationToken = default)
     {
-        // Set response status code
         context.Response.StatusCode = cachedResponse.StatusCode;
 
         // Copy headers
@@ -173,7 +152,6 @@ public class CacheService : ICacheService
         // Copy headers exactly as they were originally received, but exclude problematic headers
         foreach (var header in cachedResponse.Headers)
         {
-            // Skip headers that would cause issues with cached responses
             if (IsRestrictedHeader(header.Key))
                 continue;
 
@@ -184,7 +162,6 @@ public class CacheService : ICacheService
             catch
             {
                 // Ignore headers that can't be set due to framework restrictions
-                // but don't modify the response structure
             }
         }
 
@@ -202,7 +179,6 @@ public class CacheService : ICacheService
 
         while (offset < totalLength)
         {
-            // Check for cancellation before processing each chunk
             cancellationToken.ThrowIfCancellationRequested();
 
             var currentChunkSize = Math.Min(chunkSize, totalLength - offset);
@@ -223,7 +199,6 @@ public class CacheService : ICacheService
                 }
                 catch (OperationCanceledException)
                 {
-                    // If cancelled during delay, break the loop
                     break;
                 }
             }
@@ -232,7 +207,6 @@ public class CacheService : ICacheService
 
     private static bool IsRestrictedHeader(string headerName)
     {
-        // Headers that shouldn't be copied to maintain transparency
         var restrictedHeaders = new[]
         {
             "connection", "content-length", "transfer-encoding", "upgrade",

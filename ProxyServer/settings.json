@@ -6,7 +6,8 @@
     }
   ],
   "UpstreamUrl": "http://localhost:11434",
-  "UseMemoryCache": true,
+  "EnableMemoryCache": true,
+  "EnableDiskCache": true,
   "CacheDurationSeconds": 6000,
   "CacheMaxEntries": 10000,
   "Port": 8042,
@@ -15,6 +16,11 @@
   "StreamingCache": {
     "EnableStreamingCache": true,
     "ChunkSize": 64,
-    "ChunkDelayMs": 100
+    "ChunkDelayMs": 1000
+  },
+  "DiskCache": {
+    "CachePath": "./cache/proxy_cache.db",
+    "MaxSizeMB": 1024,
+    "CleanupIntervalMinutes": 60
   }
 }

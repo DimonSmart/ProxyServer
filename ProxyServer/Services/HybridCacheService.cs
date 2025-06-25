@@ -1,69 +1,116 @@
 using DimonSmart.ProxyServer.Interfaces;
 using DimonSmart.ProxyServer.Models;
 using Microsoft.Extensions.Caching.Memory;
-using System.Security.Cryptography;
-using System.Text;
 
 namespace DimonSmart.ProxyServer.Services;
 
-public class CacheService : ICacheService
+public class HybridCacheService : ICacheService, IDisposable
 {
-    private readonly IMemoryCache? _cache;
+    private readonly IMemoryCache? _hotCache;
+    private readonly IDiskCacheService _diskCache;
     private readonly ProxySettings _settings;
+    private readonly ILogger<HybridCacheService> _logger;
     private long _totalRequests;
-    private long _cacheHits;
+    private long _hotCacheHits;
+    private long _diskCacheHits;
     private long _cacheMisses;
     private readonly object _statsLock = new();
+    private bool _disposed = false;
 
-    public CacheService(IMemoryCache? cache, ProxySettings settings)
+    public HybridCacheService(
+        IMemoryCache? hotCache,
+        IDiskCacheService diskCache,
+        ProxySettings settings,
+        ILogger<HybridCacheService> logger)
     {
-        _cache = cache;
+        _hotCache = hotCache;
+        _diskCache = diskCache;
         _settings = settings;
+        _logger = logger;
     }
 
     public async Task<T?> GetAsync<T>(string key) where T : class
     {
-        if (_cache == null)
-        {
-            lock (_statsLock)
-            {
-                _totalRequests++;
-                _cacheMisses++;
-            }
-            return null;
-        }
+        if (_disposed) return null;
 
         lock (_statsLock)
         {
             _totalRequests++;
         }
 
-        var result = await Task.FromResult(_cache.TryGetValue(key, out T? value) ? value : null);
-
-        lock (_statsLock)
+        // First check hot cache (memory)
+        if (_hotCache != null && _hotCache.TryGetValue(key, out T? hotValue))
         {
-            if (result != null)
+            lock (_statsLock)
             {
-                _cacheHits++;
+                _hotCacheHits++;
             }
-            else
-            {
-                _cacheMisses++;
-            }
+            _logger.LogDebug("Cache hit (hot): {Key}", key);
+            return hotValue;
         }
 
-        return result;
+        // Then check disk cache
+        var diskValue = await _diskCache.GetAsync<T>(key);
+        if (diskValue != null)
+        {
+            lock (_statsLock)
+            {
+                _diskCacheHits++;
+            }
+            _logger.LogDebug("Cache hit (disk): {Key}", key);
+
+            // Promote to hot cache with shorter expiration
+            if (_hotCache != null)
+            {
+                var hotCacheExpiration = TimeSpan.FromMinutes(Math.Min(30, _settings.CacheDurationSeconds / 60.0));
+                var options = new MemoryCacheEntryOptions()
+                    .SetAbsoluteExpiration(hotCacheExpiration)
+                    .SetSize(1)
+                    .SetPriority(CacheItemPriority.Normal);
+
+                _hotCache.Set(key, diskValue, options);
+                _logger.LogDebug("Promoted to hot cache: {Key}", key);
+            }
+
+            return diskValue;
+        }
+
+        // Cache miss
+        lock (_statsLock)
+        {
+            _cacheMisses++;
+        }
+        _logger.LogDebug("Cache miss: {Key}", key);
+        return null;
     }
 
     public async Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
     {
-        if (_cache == null) return;
+        if (_disposed) return;
 
-        var options = new MemoryCacheEntryOptions()
-            .SetAbsoluteExpiration(expiration)
-            .SetSize(1);
+        try
+        {
+            // Always store in disk cache for persistence
+            await _diskCache.SetAsync(key, value, expiration);
+            _logger.LogDebug("Stored in disk cache: {Key}", key);
 
-        await Task.Run(() => _cache.Set(key, value, options));
+            // Store in hot cache with shorter expiration if memory cache is enabled
+            if (_hotCache != null && _settings.EnableMemoryCache)
+            {
+                var hotCacheExpiration = TimeSpan.FromMinutes(Math.Min(30, expiration.TotalMinutes));
+                var options = new MemoryCacheEntryOptions()
+                    .SetAbsoluteExpiration(hotCacheExpiration)
+                    .SetSize(1)
+                    .SetPriority(CacheItemPriority.High); // New items get high priority
+
+                _hotCache.Set(key, value, options);
+                _logger.LogDebug("Stored in hot cache: {Key}", key);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error setting cache value for key {Key}", key);
+        }
     }
 
     public async Task<string> GenerateCacheKeyAsync(HttpContext context)
@@ -76,7 +123,9 @@ public class CacheService : ICacheService
             using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
             var body = await reader.ReadToEndAsync();
             context.Request.Body.Position = 0;
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(body));
+
+            // Use a more efficient hash for large bodies
+            var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(body));
             cacheKey += ":" + Convert.ToHexString(hash);
         }
 
@@ -85,7 +134,11 @@ public class CacheService : ICacheService
 
     public bool CanCache(HttpContext context)
     {
-        if (!_settings.EnableMemoryCache || _cache == null) return false;
+        // Check if either hot or disk cache is enabled
+        var canUseHotCache = _settings.EnableMemoryCache && _hotCache != null;
+        var canUseDiskCache = _diskCache != null;
+
+        if (!canUseHotCache && !canUseDiskCache) return false;
 
         var isGetOrPost = context.Request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase) ||
                          context.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase);
@@ -100,10 +153,10 @@ public class CacheService : ICacheService
     {
         lock (_statsLock)
         {
-            var currentEntries = 0;
-            if (_cache is MemoryCache mc)
+            var currentHotEntries = 0;
+            if (_hotCache is MemoryCache mc)
             {
-                // Try to get current entry count using reflection as MemoryCache doesn't expose this directly
+                // Try to get current entry count using reflection
                 var field = typeof(MemoryCache).GetField("_coherentState",
                     System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 if (field?.GetValue(mc) is object coherentState)
@@ -111,19 +164,27 @@ public class CacheService : ICacheService
                     var countProp = coherentState.GetType().GetProperty("Count");
                     if (countProp != null)
                     {
-                        currentEntries = (int)(countProp.GetValue(coherentState) ?? 0);
+                        currentHotEntries = (int)(countProp.GetValue(coherentState) ?? 0);
                     }
                 }
             }
 
+            // Get disk cache statistics asynchronously
+            var diskEntries = _diskCache.GetCountAsync().GetAwaiter().GetResult();
+
             return new CacheStatistics
             {
                 TotalRequests = _totalRequests,
-                CacheHits = _cacheHits,
+                CacheHits = _hotCacheHits + _diskCacheHits,
                 CacheMisses = _cacheMisses,
-                CurrentEntries = currentEntries,
+                CurrentEntries = currentHotEntries + diskEntries,
                 MaxEntries = _settings.CacheMaxEntries,
-                IsEnabled = _settings.EnableMemoryCache && _cache != null
+                IsEnabled = (_settings.EnableMemoryCache && _hotCache != null) || _diskCache != null,
+                // Additional hybrid cache stats
+                HotCacheHits = _hotCacheHits,
+                DiskCacheHits = _diskCacheHits,
+                HotCacheEntries = currentHotEntries,
+                DiskCacheEntries = diskEntries
             };
         }
     }
@@ -184,7 +245,6 @@ public class CacheService : ICacheService
             catch
             {
                 // Ignore headers that can't be set due to framework restrictions
-                // but don't modify the response structure
             }
         }
 
@@ -202,7 +262,6 @@ public class CacheService : ICacheService
 
         while (offset < totalLength)
         {
-            // Check for cancellation before processing each chunk
             cancellationToken.ThrowIfCancellationRequested();
 
             var currentChunkSize = Math.Min(chunkSize, totalLength - offset);
@@ -223,7 +282,6 @@ public class CacheService : ICacheService
                 }
                 catch (OperationCanceledException)
                 {
-                    // If cancelled during delay, break the loop
                     break;
                 }
             }
@@ -232,7 +290,6 @@ public class CacheService : ICacheService
 
     private static bool IsRestrictedHeader(string headerName)
     {
-        // Headers that shouldn't be copied to maintain transparency
         var restrictedHeaders = new[]
         {
             "connection", "content-length", "transfer-encoding", "upgrade",
@@ -241,5 +298,14 @@ public class CacheService : ICacheService
         };
 
         return restrictedHeaders.Contains(headerName.ToLowerInvariant());
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _diskCache?.Dispose();
+            _disposed = true;
+        }
     }
 }

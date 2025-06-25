@@ -43,7 +43,7 @@ public class HealthController : ControllerBase
             Details = new Dictionary<string, object>
             {
                 ["port"] = _settings.Port,
-                ["cachingEnabled"] = _settings.UseMemoryCache,
+                ["cachingEnabled"] = _settings.EnableMemoryCache,
                 ["cacheDurationSeconds"] = _settings.CacheDurationSeconds,
                 ["authenticationEnabled"] = _settings.AllowedCredentials.Count > 0
             }

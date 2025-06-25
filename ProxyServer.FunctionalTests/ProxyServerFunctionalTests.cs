@@ -11,6 +11,7 @@ using DimonSmart.ProxyServer.Extensions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using static DimonSmart.ProxyServer.ProxySettings;
 
 namespace ProxyServer.FunctionalTests;
 
@@ -23,6 +24,7 @@ public class ProxyServerFunctionalTests : IDisposable
     private readonly IHost _testServer;
     private readonly IHost _proxyServer;
     private readonly HttpClient _httpClient;
+    private readonly string _testDbPath;
 
     private const int TestServerPort = 11411;
     private const int ProxyServerPort = 15000;
@@ -37,6 +39,9 @@ public class ProxyServerFunctionalTests : IDisposable
         _output = output;
         _httpClient = new HttpClient();
         _httpClient.Timeout = TimeSpan.FromSeconds(30); // Add timeout to prevent hanging
+
+        // Create unique database path for this test instance
+        _testDbPath = Path.Combine(Path.GetTempPath(), $"test_proxy_cache_{Guid.NewGuid()}.db");
 
         // Start test server
         _testServer = TestServerHostBuilder.CreateTestServer(TestServerPort);
@@ -511,7 +516,8 @@ public class ProxyServerFunctionalTests : IDisposable
         var settings = new ProxySettings
         {
             UpstreamUrl = $"http://localhost:{TestServerPort}",
-            UseMemoryCache = true,
+            EnableMemoryCache = true,
+            EnableDiskCache = true,
             CacheDurationSeconds = 300, // 5 minutes for tests
             CacheMaxEntries = 100,
             Port = ProxyServerPort,
@@ -522,6 +528,10 @@ public class ProxyServerFunctionalTests : IDisposable
                     IPs = new List<string> { "127.0.0.1", "::1", "*.*.*.*" },
                     Passwords = new List<string> { TestPassword }
                 }
+            },
+            DiskCache = new DiskCacheSettings
+            {
+                CachePath = _testDbPath
             }
         };
 
@@ -613,17 +623,7 @@ public class ProxyServerFunctionalTests : IDisposable
         await _httpClient.PostAsync($"http://localhost:{TestServerPort}/api/StringReverse/reset", null);
     }
 
-    /// <summary>
-    /// Disposes of all resources used by the test
-    /// </summary>
-    public void Dispose()
-    {
-        _httpClient?.Dispose();
-        _testServer?.StopAsync().Wait();
-        _testServer?.Dispose();
-        _proxyServer?.StopAsync().Wait();
-        _proxyServer?.Dispose();
-    }
+
 
     /// <summary>
     /// Tests that cached non-streaming responses preserve original headers and format
@@ -672,5 +672,64 @@ public class ProxyServerFunctionalTests : IDisposable
         _output.WriteLine($"Second response (cached, non-streamed) duration: {secondDuration.TotalMilliseconds}ms");
         _output.WriteLine($"Response content: {secondContent}");
         _output.WriteLine("✓ Non-streaming cache working - cached response preserves original format");
+    }
+
+    /// <summary>
+    /// Cleanup resources after test execution
+    /// </summary>
+    public void Dispose()
+    {
+        _httpClient?.Dispose();
+        _testServer?.StopAsync().Wait();
+        _testServer?.Dispose();
+        _proxyServer?.StopAsync().Wait();
+        _proxyServer?.Dispose();
+
+        // Clean up test database file
+        CleanupTestDatabase();
+    }
+
+    private void CleanupTestDatabase()
+    {
+        if (!File.Exists(_testDbPath))
+            return;
+
+        try
+        {
+            // Give SQLite time to close connections and release file handles
+            Thread.Sleep(200);
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect(); // Second collection to ensure all finalizers have run
+
+            // Try to delete the file multiple times with increasing delays
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                try
+                {
+                    if (File.Exists(_testDbPath))
+                    {
+                        File.Delete(_testDbPath);
+                        break; // Success
+                    }
+                }
+                catch (IOException) when (attempt < 4)
+                {
+                    // File still in use, wait and try again
+                    Thread.Sleep(100 * (attempt + 1));
+                }
+            }
+
+            // If we still can't delete it, it's not critical for test functionality
+            if (File.Exists(_testDbPath))
+            {
+                Console.WriteLine($"Info: Test database file {_testDbPath} will be cleaned up by OS later");
+            }
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail the test
+            Console.WriteLine($"Info: Could not delete test database file {_testDbPath}: {ex.Message}");
+        }
     }
 }
