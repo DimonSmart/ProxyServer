@@ -7,9 +7,9 @@
   ],
   "UpstreamUrl": "http://localhost:11434",
   "UseMemoryCache": true,
-  "CacheDurationSeconds": 60,
-  "CacheMaxEntries": 1000,
-  "Port": 5000,
+  "CacheDurationSeconds": 6000,
+  "CacheMaxEntries": 10000,
+  "Port": 8042,
   "CertificatePath": "",
   "CertificatePassword": ""
 }
