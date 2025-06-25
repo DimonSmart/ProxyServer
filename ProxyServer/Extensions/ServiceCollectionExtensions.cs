@@ -1,6 +1,5 @@
 using DimonSmart.ProxyServer.Interfaces;
 using DimonSmart.ProxyServer.Services;
-using DimonSmart.ProxyServer.Middleware;
 
 namespace DimonSmart.ProxyServer.Extensions;
 
@@ -24,17 +23,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICacheService, CacheService>();
         services.AddHttpClient<IProxyService, ProxyService>();
 
-        return services;
-    }
-}
+        // Add controller support for health check endpoints
+        services.AddControllers();
 
-public static class ApplicationBuilderExtensions
-{
-    public static IApplicationBuilder UseProxyServer(this IApplicationBuilder app)
-    {
-        app.UseMiddleware<AccessControlMiddleware>();
-        app.UseMiddleware<ProxyMiddleware>();
-        
-        return app;
+        return services;
     }
 }

@@ -11,7 +11,7 @@ namespace ProxyServer.FunctionalTests.TestServer;
 public class StringReverseController : ControllerBase
 {
     private static int _callCount = 0;
-    
+
     /// <summary>
     /// Reverses the provided text string
     /// </summary>
@@ -21,23 +21,23 @@ public class StringReverseController : ControllerBase
     public IActionResult ReverseString([FromBody] ReverseRequest request)
     {
         Interlocked.Increment(ref _callCount);
-        
+
         if (string.IsNullOrEmpty(request.Text))
         {
             return BadRequest("Text is required");
         }
 
         var reversed = new string(request.Text.Reverse().ToArray());
-        
-        return Ok(new ReverseResponse 
-        { 
+
+        return Ok(new ReverseResponse
+        {
             OriginalText = request.Text,
             ReversedText = reversed,
             CallNumber = _callCount,
             Timestamp = DateTime.UtcNow
         });
     }
-    
+
     /// <summary>
     /// Gets the current call statistics
     /// </summary>
@@ -47,7 +47,7 @@ public class StringReverseController : ControllerBase
     {
         return Ok(new { CallCount = _callCount });
     }
-    
+
     /// <summary>
     /// Resets the call statistics
     /// </summary>

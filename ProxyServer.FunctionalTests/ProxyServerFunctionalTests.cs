@@ -21,7 +21,7 @@ public class ProxyServerFunctionalTests : IDisposable
     private readonly IHost _testServer;
     private readonly IHost _proxyServer;
     private readonly HttpClient _httpClient;
-    
+
     private const int TestServerPort = 11411;
     private const int ProxyServerPort = 15000;
     private const string TestPassword = "testpass123";
@@ -34,7 +34,7 @@ public class ProxyServerFunctionalTests : IDisposable
     {
         _output = output;
         _httpClient = new HttpClient();
-        
+
         // Start test server
         _testServer = TestServerHostBuilder.CreateTestServer(TestServerPort);
         _testServer.StartAsync().Wait();
@@ -44,7 +44,7 @@ public class ProxyServerFunctionalTests : IDisposable
         _proxyServer = CreateProxyServer();
         _proxyServer.StartAsync().Wait();
         _output.WriteLine($"Proxy server started on port {ProxyServerPort}");
-        
+
         // Small delay for complete server initialization
         Thread.Sleep(1000);
     }
@@ -67,19 +67,19 @@ public class ProxyServerFunctionalTests : IDisposable
 
         // Act - First request through proxy
         var response1 = await MakeProxyRequest("/api/StringReverse/reverse", requestContent);
-        
+
         // Add debug information
         if (response1.StatusCode != HttpStatusCode.OK)
         {
             var errorContent = await response1.Content.ReadAsStringAsync();
             _output.WriteLine($"First request failed with status: {response1.StatusCode}, content: {errorContent}");
         }
-        
+
         // Assert - Check first response
         Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
         var responseContent1 = await response1.Content.ReadAsStringAsync();
         _output.WriteLine($"First response: {responseContent1}");
-        
+
         var responseData1 = JsonSerializer.Deserialize<ReverseResponse>(responseContent1, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true
@@ -98,7 +98,7 @@ public class ProxyServerFunctionalTests : IDisposable
             JsonSerializer.Serialize(request),
             Encoding.UTF8,
             "application/json");
-            
+
         var response2 = await MakeProxyRequest("/api/StringReverse/reverse", requestContent2);
 
         // Assert - Check second response
@@ -113,14 +113,14 @@ public class ProxyServerFunctionalTests : IDisposable
         Assert.NotNull(responseData2);
         Assert.Equal("Hello World", responseData2.OriginalText);
         Assert.Equal("dlroW olleH", responseData2.ReversedText);
-        
+
         // Important: CallNumber should remain 1, as response came from cache
         Assert.Equal(1, responseData2.CallNumber);
 
         // Verify that test server was NOT called again
         var stats2 = await GetTestServerStats();
         Assert.Equal(1, stats2.CallCount);
-        
+
         _output.WriteLine("✓ Cache is working correctly - second request was served from cache");
     }
 
@@ -137,27 +137,27 @@ public class ProxyServerFunctionalTests : IDisposable
         var request2 = new { Text = "Second" };
 
         // Act & Assert - First request
-        var response1 = await MakeProxyRequest("/api/StringReverse/reverse", 
+        var response1 = await MakeProxyRequest("/api/StringReverse/reverse",
             CreateJsonContent(request1));
-        
+
         Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
         var data1 = await DeserializeResponse<ReverseResponse>(response1);
         Assert.Equal("tsriF", data1.ReversedText);
         Assert.Equal(1, data1.CallNumber);
 
         // Act & Assert - Second request (different data)
-        var response2 = await MakeProxyRequest("/api/StringReverse/reverse", 
+        var response2 = await MakeProxyRequest("/api/StringReverse/reverse",
             CreateJsonContent(request2));
-        
+
         Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
         var data2 = await DeserializeResponse<ReverseResponse>(response2);
         Assert.Equal("dnoceS", data2.ReversedText);
         Assert.Equal(2, data2.CallNumber);
 
         // Act & Assert - Repeat first request (from cache)
-        var response3 = await MakeProxyRequest("/api/StringReverse/reverse", 
+        var response3 = await MakeProxyRequest("/api/StringReverse/reverse",
             CreateJsonContent(request1));
-        
+
         Assert.Equal(HttpStatusCode.OK, response3.StatusCode);
         var data3 = await DeserializeResponse<ReverseResponse>(response3);
         Assert.Equal("tsriF", data3.ReversedText);
@@ -183,11 +183,11 @@ public class ProxyServerFunctionalTests : IDisposable
 
         // Act & Assert - First request (not from cache)
         var start1 = DateTime.UtcNow;
-        var response1 = await MakeProxyRequest("/api/StringReverse/reverse", 
+        var response1 = await MakeProxyRequest("/api/StringReverse/reverse",
             CreateJsonContent(request));
         var end1 = DateTime.UtcNow;
         var duration1 = end1 - start1;
-        
+
         Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
         var data1 = await DeserializeResponse<ReverseResponse>(response1);
         Assert.Equal("tseT ehcaC", data1.ReversedText);
@@ -197,11 +197,11 @@ public class ProxyServerFunctionalTests : IDisposable
 
         // Act & Assert - Second request (from cache, should be faster)
         var start2 = DateTime.UtcNow;
-        var response2 = await MakeProxyRequest("/api/StringReverse/reverse", 
+        var response2 = await MakeProxyRequest("/api/StringReverse/reverse",
             CreateJsonContent(request));
         var end2 = DateTime.UtcNow;
         var duration2 = end2 - start2;
-        
+
         Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
         var data2 = await DeserializeResponse<ReverseResponse>(response2);
         Assert.Equal("tseT ehcaC", data2.ReversedText);
@@ -210,7 +210,7 @@ public class ProxyServerFunctionalTests : IDisposable
         _output.WriteLine($"Second request (cached) took: {duration2.TotalMilliseconds}ms");
 
         // Cached request should be significantly faster
-        Assert.True(duration2 < duration1, 
+        Assert.True(duration2 < duration1,
             $"Cached request should be faster. First: {duration1.TotalMilliseconds}ms, Second: {duration2.TotalMilliseconds}ms");
 
         // Verify that test server was called only once
@@ -218,6 +218,131 @@ public class ProxyServerFunctionalTests : IDisposable
         Assert.Equal(1, stats.CallCount);
 
         _output.WriteLine("✓ Cache performance verified - cached responses are significantly faster");
+    }
+
+    /// <summary>
+    /// Tests the health check endpoint returns proper status information
+    /// </summary>
+    [Fact]
+    public async Task ProxyServer_HealthCheck_ShouldReturnHealthStatus()
+    {
+        // Act
+        var response = await _httpClient.GetAsync($"http://localhost:{ProxyServerPort}/health");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var content = await response.Content.ReadAsStringAsync();
+        _output.WriteLine($"Health check response: {content}");
+
+        var healthData = JsonSerializer.Deserialize<JsonElement>(content, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        // Verify health status structure
+        Assert.True(healthData.TryGetProperty("status", out var status));
+        Assert.Equal("Healthy", status.GetString());
+
+        Assert.True(healthData.TryGetProperty("version", out var version));
+        Assert.False(string.IsNullOrEmpty(version.GetString()));
+
+        Assert.True(healthData.TryGetProperty("uptime", out var uptime));
+        Assert.False(string.IsNullOrEmpty(uptime.GetString()));
+
+        Assert.True(healthData.TryGetProperty("cache", out var cache));
+        Assert.True(cache.TryGetProperty("isEnabled", out var cacheEnabled));
+        Assert.True(cacheEnabled.GetBoolean());
+
+        Assert.True(healthData.TryGetProperty("upstreamUrl", out var upstream));
+        Assert.Equal($"http://localhost:{TestServerPort}", upstream.GetString());
+
+        _output.WriteLine("✓ Health check endpoint working correctly");
+    }
+
+    /// <summary>
+    /// Tests the ping endpoint returns simple status
+    /// </summary>
+    [Fact]
+    public async Task ProxyServer_Ping_ShouldReturnOkStatus()
+    {
+        // Act
+        var response = await _httpClient.GetAsync($"http://localhost:{ProxyServerPort}/ping");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var content = await response.Content.ReadAsStringAsync();
+        _output.WriteLine($"Ping response: {content}");
+
+        var pingData = JsonSerializer.Deserialize<JsonElement>(content, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        Assert.True(pingData.TryGetProperty("status", out var status));
+        Assert.Equal("ok", status.GetString());
+
+        Assert.True(pingData.TryGetProperty("timestamp", out var timestamp));
+        Assert.False(string.IsNullOrEmpty(timestamp.GetString()));
+
+        _output.WriteLine("✓ Ping endpoint working correctly");
+    }
+
+    /// <summary>
+    /// Tests the cache statistics endpoint and verifies cache metrics
+    /// </summary>
+    [Fact]
+    public async Task ProxyServer_CacheStats_ShouldReturnCacheStatistics()
+    {
+        // Arrange - Make some requests to generate cache statistics
+        await ResetTestServerStats();
+        var request = new { Text = "Stats Test" };
+
+        // Make first request (cache miss)
+        var response1 = await MakeProxyRequest("/api/StringReverse/reverse",
+            CreateJsonContent(request));
+        Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
+
+        // Make second request (cache hit)
+        var response2 = await MakeProxyRequest("/api/StringReverse/reverse",
+            CreateJsonContent(request));
+        Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
+
+        // Act - Get cache statistics
+        var statsResponse = await _httpClient.GetAsync($"http://localhost:{ProxyServerPort}/stats/cache");
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, statsResponse.StatusCode);
+
+        var content = await statsResponse.Content.ReadAsStringAsync();
+        _output.WriteLine($"Cache stats response: {content}");
+
+        var cacheStats = JsonSerializer.Deserialize<JsonElement>(content, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+
+        // Verify cache statistics structure
+        Assert.True(cacheStats.TryGetProperty("totalRequests", out var totalRequests));
+        Assert.True(totalRequests.GetInt64() >= 2); // At least 2 requests
+
+        Assert.True(cacheStats.TryGetProperty("cacheHits", out var cacheHits));
+        Assert.True(cacheHits.GetInt64() >= 1); // At least 1 hit
+
+        Assert.True(cacheStats.TryGetProperty("cacheMisses", out var cacheMisses));
+        Assert.True(cacheMisses.GetInt64() >= 1); // At least 1 miss
+
+        Assert.True(cacheStats.TryGetProperty("hitRate", out var hitRate));
+        Assert.True(hitRate.GetDouble() >= 0 && hitRate.GetDouble() <= 100);
+
+        Assert.True(cacheStats.TryGetProperty("isEnabled", out var isEnabled));
+        Assert.True(isEnabled.GetBoolean());
+
+        Assert.True(cacheStats.TryGetProperty("maxEntries", out var maxEntries));
+        Assert.Equal(100, maxEntries.GetInt32()); // From test configuration
+
+        _output.WriteLine("✓ Cache statistics endpoint working correctly");
     }
 
     /// <summary>
@@ -277,11 +402,11 @@ public class ProxyServerFunctionalTests : IDisposable
         {
             Content = content
         };
-        
+
         // Add Basic Auth header
         var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"user:{TestPassword}"));
         request.Headers.Add("Authorization", $"Basic {credentials}");
-        
+
         return await _httpClient.SendAsync(request);
     }
 

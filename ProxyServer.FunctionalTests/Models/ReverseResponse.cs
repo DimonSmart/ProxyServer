@@ -9,17 +9,17 @@ public class ReverseResponse
     /// The original text before reversal
     /// </summary>
     public string OriginalText { get; set; } = string.Empty;
-    
+
     /// <summary>
     /// The reversed text
     /// </summary>
     public string ReversedText { get; set; } = string.Empty;
-    
+
     /// <summary>
     /// The sequential call number for this request
     /// </summary>
     public int CallNumber { get; set; }
-    
+
     /// <summary>
     /// The timestamp when the request was processed
     /// </summary>

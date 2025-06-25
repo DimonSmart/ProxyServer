@@ -1,3 +1,5 @@
+using DimonSmart.ProxyServer.Models;
+
 namespace DimonSmart.ProxyServer.Interfaces;
 
 public interface ICacheService
@@ -6,4 +8,5 @@ public interface ICacheService
     Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class;
     string GenerateCacheKey(HttpContext context);
     bool CanCache(HttpContext context);
+    CacheStatistics GetStatistics();
 }
