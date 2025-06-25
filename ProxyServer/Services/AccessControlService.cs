@@ -2,25 +2,34 @@
 using System.Text.RegularExpressions;
 using DimonSmart.ProxyServer.Interfaces;
 using DimonSmart.ProxyServer.Models;
+using Microsoft.Extensions.Logging;
 
 namespace DimonSmart.ProxyServer.Services;
 
 public class AccessControlService : IAccessControlService
 {
     private readonly ProxySettings _settings;
+    private readonly ILogger<AccessControlService> _logger;
 
-    public AccessControlService(ProxySettings settings)
+    public AccessControlService(ProxySettings settings, ILogger<AccessControlService> logger)
     {
         _settings = settings;
+        _logger = logger;
     }
 
     public (bool IsAllowed, int StatusCode, string? ErrorMessage) Validate(HttpContext context)
     {
-        var remoteIp = context.Connection.RemoteIpAddress?.MapToIPv4();
-        if (remoteIp == null)
+        var remoteIpAddress = context.Connection.RemoteIpAddress;
+        if (remoteIpAddress == null)
         {
             return (false, StatusCodes.Status403Forbidden, "Forbidden: Cannot determine remote IP");
         }
+
+        // Use the original IP address without mapping
+        var remoteIp = remoteIpAddress.ToString();
+        _logger.LogInformation("Remote IP: {RemoteIP}, Is IPv6: {IsIPv6}", 
+            remoteIp, 
+            remoteIpAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6);
 
         string? providedPassword = null;
         if (context.Request.Headers.ContainsKey("Authorization"))
@@ -65,7 +74,7 @@ public class AccessControlService : IAccessControlService
             {
                 foreach (var pattern in pair.IPs)
                 {
-                    if (IsMatch(remoteIp.ToString(), pattern))
+                    if (IsMatch(remoteIp, pattern))
                     {
                         currentIpAllowed = true;
                         break;
