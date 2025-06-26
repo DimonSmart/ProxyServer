@@ -4,14 +4,14 @@ using System.Text.Json;
 
 namespace DimonSmart.ProxyServer.Services;
 
-public class SqliteDiskCacheService : IExtendedCacheService, IDisposable
+public class DatabaseCacheService : IExtendedCacheService, IDisposable
 {
     private readonly string _connectionString;
-    private readonly ILogger<SqliteDiskCacheService> _logger;
+    private readonly ILogger<DatabaseCacheService> _logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private bool _disposed = false;
 
-    public SqliteDiskCacheService(string dbPath, ILogger<SqliteDiskCacheService> logger)
+    public DatabaseCacheService(string dbPath, ILogger<DatabaseCacheService> logger)
     {
         _logger = logger;
 

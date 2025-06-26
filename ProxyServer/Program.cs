@@ -38,18 +38,18 @@ app.Run();
 static async Task<int> HandleCommandLineAsync(string[] args)
 {
     var settings = LoadSettings();
-    
+
     // Create a temporary service collection for command line operations
     var services = new ServiceCollection();
     services.AddLogging(builder => builder.AddConsole());
     services.AddSingleton(settings);
     services.AddProxyServices(settings);
     services.AddTransient<CommandLineService>();
-    
-    #pragma warning disable ASP0000 // BuildServiceProvider is acceptable for command line scenarios
+
+#pragma warning disable ASP0000 // BuildServiceProvider is acceptable for command line scenarios
     using var serviceProvider = services.BuildServiceProvider();
-    #pragma warning restore ASP0000
-    
+#pragma warning restore ASP0000
+
     var commandLineService = serviceProvider.GetRequiredService<CommandLineService>();
     return await commandLineService.ExecuteAsync(args);
 }

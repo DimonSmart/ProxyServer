@@ -4,91 +4,109 @@ using Microsoft.Extensions.Caching.Memory;
 namespace DimonSmart.ProxyServer.Services;
 
 /// <summary>
-/// Memory cache service implementation
+/// Memory cache service implementation with optional inner cache composition
 /// </summary>
-public class MemoryCacheService : BaseCacheService, IDisposable
+public class MemoryCacheService(
+    IMemoryCache? memoryCache,
+    ProxySettings settings,
+    ILogger<MemoryCacheService> logger,
+    ICacheService? innerCache = null) : BaseCacheService(settings, logger), IDisposable
 {
-    private readonly IMemoryCache? _memoryCache;
     private bool _disposed = false;
 
-    public MemoryCacheService(
-        IMemoryCache? memoryCache,
-        ProxySettings settings,
-        ILogger<MemoryCacheService> logger)
-        : base(settings, logger)
+    public override async Task<T?> GetAsync<T>(string key) where T : class
     {
-        _memoryCache = memoryCache;
-    }
+        if (_disposed) return null;
 
-    public override Task<T?> GetAsync<T>(string key) where T : class
-    {
-        if (_disposed) return Task.FromResult<T?>(null);
-
-        if (_memoryCache == null)
-        {
-            _logger.LogDebug("Memory cache disabled - miss: {Key}", key);
-            return Task.FromResult<T?>(null);
-        }
-
-        var result = _memoryCache.TryGetValue(key, out T? value) ? value : null;
-
-        if (result != null)
+        // First check memory cache
+        if (memoryCache != null && memoryCache.TryGetValue(key, out T? value))
         {
             _logger.LogDebug("Memory cache hit: {Key}", key);
-        }
-        else
-        {
-            _logger.LogDebug("Cache miss: {Key}", key);
+            return value;
         }
 
-        return Task.FromResult(result);
+        _logger.LogDebug("Memory cache miss: {Key}", key);
+
+        // If not found in memory and we have an inner cache, check it
+        if (innerCache != null)
+        {
+            var innerValue = await innerCache.GetAsync<T>(key);
+            if (innerValue != null)
+            {
+                _logger.LogDebug("Inner cache hit, promoting to memory: {Key}", key);
+
+                // Promote to memory cache with shorter expiration
+                if (memoryCache != null)
+                {
+                    var options = new MemoryCacheEntryOptions()
+                        .SetAbsoluteExpiration(TimeSpan.FromMinutes(5)) // Shorter expiration for promoted items
+                        .SetSize(1)
+                        .SetPriority(CacheItemPriority.Normal);
+
+                    memoryCache.Set(key, innerValue, options);
+                }
+
+                return innerValue;
+            }
+        }
+
+        return null;
     }
 
-    public override Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
+    public override async Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
     {
-        if (_disposed || _memoryCache == null)
+        if (_disposed) return;
+
+        // Store in memory cache if available
+        if (memoryCache != null)
         {
-            _logger.LogDebug("Memory cache disabled - not storing: {Key}", key);
-            return Task.CompletedTask;
+            try
+            {
+                var options = new MemoryCacheEntryOptions()
+                    .SetAbsoluteExpiration(expiration)
+                    .SetSize(1)
+                    .SetPriority(CacheItemPriority.Normal);
+
+                memoryCache.Set(key, value, options);
+                _logger.LogDebug("Stored in memory cache: {Key}", key);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to store value in memory cache: {Key}", key);
+            }
         }
 
-        try
+        // Also store in inner cache if available
+        if (innerCache != null)
         {
-            var options = new MemoryCacheEntryOptions()
-                .SetAbsoluteExpiration(expiration)
-                .SetSize(1)
-                .SetPriority(CacheItemPriority.Normal);
-
-            _memoryCache.Set(key, value, options);
-            _logger.LogDebug("Stored in memory cache: {Key}", key);
+            await innerCache.SetAsync(key, value, expiration);
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to store value in memory cache: {Key}", key);
-        }
-
-        return Task.CompletedTask;
     }
 
-    public override Task ClearAsync()
+    public override async Task ClearAsync()
     {
-        if (_disposed || _memoryCache == null)
+        if (_disposed) return;
+
+        // Clear memory cache
+        if (memoryCache != null)
         {
-            return Task.CompletedTask;
+            try
+            {
+                // Memory cache doesn't have a clear method, dispose and recreate is not possible here
+                // Log warning as memory cache clearing is not fully supported
+                _logger.LogWarning("Memory cache clear requested, but MemoryCache doesn't support clearing. Consider restarting the application.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during memory cache clear attempt");
+            }
         }
 
-        try
+        // Clear inner cache if available
+        if (innerCache != null)
         {
-            // Memory cache doesn't have a clear method, dispose and recreate is not possible here
-            // Log warning as memory cache clearing is not fully supported
-            _logger.LogWarning("Memory cache clear requested, but MemoryCache doesn't support clearing. Consider restarting the application.");
+            await innerCache.ClearAsync();
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error during memory cache clear attempt");
-        }
-
-        return Task.CompletedTask;
     }
 
     public void Dispose()

@@ -8,12 +8,12 @@ namespace DimonSmart.ProxyServer.Extensions;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds proxy services to the service collection with decorator pattern configuration.
-    /// Cache services are composed as decorators:
+    /// Adds proxy services to the service collection with composition pattern configuration.
+    /// Cache services are composed as nested dependencies:
     /// - No cache: null (no caching)
     /// - Memory only: MemoryCacheService (terminal)
-    /// - Disk only: DiskCacheService (terminal)
-    /// - Memory + Disk: MemoryCacheDecorator wrapping DiskCacheService
+    /// - Database only: DatabaseCacheService (terminal)
+    /// - Memory + Database: MemoryCacheService wrapping DatabaseCacheService
     /// </summary>
     public static IServiceCollection AddProxyServices(this IServiceCollection services, ProxySettings settings)
     {
@@ -54,8 +54,8 @@ public static class ServiceCollectionExtensions
         // Register disk cache service as IExtendedCacheService
         services.AddSingleton<IExtendedCacheService>(provider =>
         {
-            var logger = provider.GetRequiredService<ILogger<SqliteDiskCacheService>>();
-            return new SqliteDiskCacheService(settings.DiskCache.CachePath, logger);
+            var logger = provider.GetRequiredService<ILogger<DatabaseCacheService>>();
+            return new DatabaseCacheService(settings.DiskCache.CachePath, logger);
         });
 
         // Register cache cleanup service
@@ -69,22 +69,19 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ICacheService>(provider =>
         {
-            // Case 1: Both memory and disk enabled - Memory decorator wrapping disk
+            // Case 1: Both memory and database enabled - Memory wrapping database
             if (hasMemoryCache && hasDiskCache)
             {
                 var diskCache = provider.GetRequiredService<IExtendedCacheService>();
-                var baseDiskService = new DiskOnlyCacheService(diskCache);
-
                 var memoryCache = provider.GetRequiredService<IMemoryCache>();
-                var memoryLogger = provider.GetRequiredService<ILogger<MemoryCacheDecorator>>();
-                return new MemoryCacheDecorator(memoryCache, settings, memoryLogger, baseDiskService);
+                var logger = provider.GetRequiredService<ILogger<MemoryCacheService>>();
+                return new MemoryCacheService(memoryCache, settings, logger, diskCache);
             }
 
-            // Case 2: Only disk enabled
+            // Case 2: Only database enabled
             if (hasDiskCache)
             {
-                var diskCache = provider.GetRequiredService<IExtendedCacheService>();
-                return new DiskOnlyCacheService(diskCache);
+                return provider.GetRequiredService<IExtendedCacheService>();
             }
 
             // Case 3: Only memory enabled
