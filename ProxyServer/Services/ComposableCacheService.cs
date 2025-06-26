@@ -5,10 +5,9 @@ namespace DimonSmart.ProxyServer.Services;
 /// <summary>
 /// Composable cache service that chains two cache implementations
 /// </summary>
-public class ComposableCacheService(ICacheService primaryCache, ICacheService? fallbackCache = null, TimeSpan? promotionTtl = null) : ICacheService
+public class ComposableCacheService(ICacheService primaryCache, ICacheService? fallbackCache = null) : ICacheService
 {
     private readonly ICacheService _primaryCache = primaryCache ?? throw new ArgumentNullException(nameof(primaryCache));
-    private readonly TimeSpan _promotionTtl = promotionTtl ?? TimeSpan.FromMinutes(30); // Default TTL for primary cache
 
     public async Task<T?> GetAsync<T>(string key) where T : class
     {
@@ -20,13 +19,7 @@ public class ComposableCacheService(ICacheService primaryCache, ICacheService? f
 
         if (fallbackCache != null)
         {
-            var fallbackValue = await fallbackCache.GetAsync<T>(key);
-            if (fallbackValue != null)
-            {
-                // Promote value from fallback to primary cache using primary cache TTL
-                await _primaryCache.SetAsync(key, fallbackValue, _promotionTtl);
-                return fallbackValue;
-            }
+            return await fallbackCache.GetAsync<T>(key);
         }
 
         return null;

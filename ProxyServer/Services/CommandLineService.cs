@@ -67,16 +67,23 @@ public class CommandLineService
         Console.WriteLine();
         Console.WriteLine($"Settings file location: {GetSettingsPath()}");
         Console.WriteLine($"Memory cache enabled: {_settings.EnableMemoryCache}");
+        Console.WriteLine($"Memory cache enabled: {_settings.EnableMemoryCache}");
+
+        if (_settings.EnableMemoryCache)
+        {
+            Console.WriteLine($"Memory cache TTL: {_settings.MemoryCache.TtlSeconds} seconds");
+            Console.WriteLine($"Memory cache max entries: {_settings.MemoryCache.MaxEntries}");
+        }
+
         Console.WriteLine($"Disk cache enabled: {_settings.EnableDiskCache}");
 
         if (_settings.EnableDiskCache)
         {
             Console.WriteLine($"Disk cache path: {_settings.DiskCache.CachePath}");
+            Console.WriteLine($"Disk cache TTL: {_settings.DiskCache.TtlSeconds} seconds");
             Console.WriteLine($"Disk cache max size: {_settings.DiskCache.MaxSizeMB} MB");
             Console.WriteLine($"Cleanup interval: {_settings.DiskCache.CleanupIntervalMinutes} minutes");
         }
-
-        Console.WriteLine($"Cache duration: {_settings.CacheDurationSeconds} seconds");
         Console.WriteLine($"Listen port: {_settings.Port}");
         Console.WriteLine($"Upstream URL: {_settings.UpstreamUrl}");
         return 0;

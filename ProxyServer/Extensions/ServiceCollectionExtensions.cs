@@ -40,9 +40,9 @@ public static class ServiceCollectionExtensions
 
         services.AddMemoryCache(options =>
         {
-            if (settings.CacheMaxEntries > 0)
+            if (settings.MemoryCache.MaxEntries > 0)
             {
-                options.SizeLimit = settings.CacheMaxEntries;
+                options.SizeLimit = settings.MemoryCache.MaxEntries;
             }
         });
     }
@@ -69,7 +69,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ICacheService>(provider =>
         {
-            // Both memory and disk             // Both memory and disk cache enabled - Composable cache with memory as primary and disk as fallback and disk as fallback
+            // Both memory and disk cache enabled - Composable cache with memory as primary and disk as fallback
             if (hasMemoryCache && hasDiskCache)
             {
                 var diskCache = provider.GetRequiredService<IExtendedCacheService>();

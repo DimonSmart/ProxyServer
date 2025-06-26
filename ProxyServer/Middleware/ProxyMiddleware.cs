@@ -60,7 +60,7 @@ public class ProxyMiddleware(
             if (ShouldCacheResponse(response))
             {
                 _logger.LogDebug("ProxyMiddleware: Caching streamed response for key: {CacheKey}", cacheKey);
-                var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
+                var cacheExpiration = GetCacheExpiration();
                 var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body ?? [], response.WasStreamed);
                 await cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
             }
@@ -117,7 +117,7 @@ public class ProxyMiddleware(
             if (ShouldCacheResponse(response))
             {
                 _logger.LogDebug("ProxyMiddleware: Caching response for key: {CacheKey}", cacheKey);
-                var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
+                var cacheExpiration = GetCacheExpiration();
                 var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body ?? [], response.WasStreamed);
                 await cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
             }
@@ -183,5 +183,30 @@ public class ProxyMiddleware(
     {
         // Only cache successful responses (2xx status codes)
         return response.StatusCode >= 200 && response.StatusCode < 300;
+    }
+
+    private TimeSpan GetCacheExpiration()
+    {
+        // If both memory and disk cache are enabled, use the longer TTL (disk cache)
+        // so that data can survive in disk even after memory cache expires
+        if (_settings.EnableMemoryCache && _settings.EnableDiskCache)
+        {
+            return TimeSpan.FromSeconds(_settings.DiskCache.TtlSeconds);
+        }
+
+        // If only disk cache is enabled, use disk TTL
+        if (_settings.EnableDiskCache)
+        {
+            return TimeSpan.FromSeconds(_settings.DiskCache.TtlSeconds);
+        }
+
+        // If only memory cache is enabled, use memory TTL
+        if (_settings.EnableMemoryCache)
+        {
+            return TimeSpan.FromSeconds(_settings.MemoryCache.TtlSeconds);
+        }
+
+        // Fallback - should not happen in normal scenarios
+        return TimeSpan.FromHours(1);
     }
 }

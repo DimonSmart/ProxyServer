@@ -30,9 +30,14 @@ Configuration is done through the `settings.json` file:
   "UpstreamUrl": "http://localhost:11434",
   "EnableMemoryCache": true,
   "EnableDiskCache": true,
-  "CacheDurationSeconds": 6000,
+  "Port": 8042,
+  "MemoryCache": {
+    "TtlSeconds": 1800,
+    "MaxEntries": 10000
+  },
   "DiskCache": {
     "CachePath": "./cache/proxy_cache.db",
+    "TtlSeconds": 604800,
     "MaxSizeMB": 1024,
     "CleanupIntervalMinutes": 60
   },
