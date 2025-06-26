@@ -1,5 +1,6 @@
 using DimonSmart.ProxyServer.Interfaces;
 using DimonSmart.ProxyServer.Models;
+using DimonSmart.ProxyServer.Utilities;
 
 namespace DimonSmart.ProxyServer.Services;
 
@@ -22,20 +23,10 @@ public class ResponseWriterService : IResponseWriterService
         var response = context.Response;
         response.StatusCode = cachedResponse.StatusCode;
 
-        // Headers that should not be copied to avoid conflicts
-        var skipHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "Transfer-Encoding",
-            "Content-Length",
-            "Connection",
-            "Date",
-            "Server"
-        };
-
-        // Set headers, excluding problematic ones
+        // Set headers, excluding restricted ones
         foreach (var header in cachedResponse.Headers)
         {
-            if (!skipHeaders.Contains(header.Key) && !response.Headers.ContainsKey(header.Key))
+            if (!HttpHeaderUtilities.IsRestrictedHeader(header.Key) && !response.Headers.ContainsKey(header.Key))
             {
                 try
                 {
@@ -48,46 +39,62 @@ public class ResponseWriterService : IResponseWriterService
             }
         }
 
-        // Extract content type from headers if present
-        if (cachedResponse.Headers.TryGetValue("Content-Type", out var contentTypeValues) && contentTypeValues.Length > 0)
-        {
-            response.ContentType = contentTypeValues[0];
-        }
-
-        // Always set content length for cached responses to avoid chunked encoding conflicts
-        if (cachedResponse.Body?.Length > 0)
-        {
-            response.ContentLength = cachedResponse.Body.Length;
-        }
-        else
-        {
-            response.ContentLength = 0;
-        }
-
         // Write the body with streaming support if enabled and response was originally streamed
         if (cachedResponse.Body?.Length > 0)
         {
             if (_settings.StreamingCache.EnableStreamingCache && cachedResponse.WasStreamed)
             {
-                // Stream the response body in chunks for better performance
-                const int bufferSize = 8192;
-                var buffer = new byte[bufferSize];
-                var offset = 0;
-
-                while (offset < cachedResponse.Body.Length)
-                {
-                    var bytesToRead = Math.Min(bufferSize, cachedResponse.Body.Length - offset);
-                    Array.Copy(cachedResponse.Body, offset, buffer, 0, bytesToRead);
-                    await response.Body.WriteAsync(buffer, 0, bytesToRead, cancellationToken);
-                    await response.Body.FlushAsync(cancellationToken);
-                    offset += bytesToRead;
-                }
+                await StreamResponseInChunks(context, cachedResponse.Body, cancellationToken);
             }
             else
             {
                 // Write the entire response at once
-                await response.Body.WriteAsync(cachedResponse.Body, 0, cachedResponse.Body.Length, cancellationToken);
+                await response.Body.WriteAsync(cachedResponse.Body, cancellationToken);
                 await response.Body.FlushAsync(cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Streams response body in chunks with configurable delays
+    /// </summary>
+    /// <param name="context">HTTP context</param>
+    /// <param name="body">Response body to stream</param>
+    /// <param name="cancellationToken">Cancellation token</param>
+    public async Task StreamResponseInChunks(HttpContext context, byte[] body, CancellationToken cancellationToken)
+    {
+        var response = context.Response;
+        var chunkSize = _settings.StreamingCache.ChunkSize;
+        var delayMs = _settings.StreamingCache.ChunkDelayMs;
+        var totalLength = body.Length;
+        var offset = 0;
+
+        // Remove problematic headers for streaming
+        response.Headers.Remove("content-length");
+        response.Headers.Remove("transfer-encoding");
+
+        while (offset < totalLength && !cancellationToken.IsCancellationRequested)
+        {
+            var remainingBytes = totalLength - offset;
+            var currentChunkSize = Math.Min(chunkSize, remainingBytes);
+
+            await response.Body.WriteAsync(body, offset, currentChunkSize, cancellationToken);
+            await response.Body.FlushAsync(cancellationToken);
+
+            offset += currentChunkSize;
+
+            // Add delay between chunks if configured and not the last chunk
+            if (delayMs > 0 && offset < totalLength)
+            {
+                try
+                {
+                    await Task.Delay(delayMs, cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // If cancelled during delay, break the loop
+                    break;
+                }
             }
         }
     }

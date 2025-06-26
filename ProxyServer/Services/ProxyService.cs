@@ -1,4 +1,5 @@
 using DimonSmart.ProxyServer.Interfaces;
+using DimonSmart.ProxyServer.Utilities;
 
 namespace DimonSmart.ProxyServer.Services;
 
@@ -182,7 +183,7 @@ public class ProxyService : IProxyService
         foreach (var header in headers)
         {
             // Skip headers that ASP.NET Core manages automatically or that can't be set during streaming
-            if (!IsRestrictedHeader(header.Key))
+            if (!HttpHeaderUtilities.IsRestrictedHeader(header.Key))
             {
                 try
                 {
@@ -198,17 +199,5 @@ public class ProxyService : IProxyService
         // For streaming responses, remove problematic headers
         context.Response.Headers.Remove("content-length");
         context.Response.Headers.Remove("transfer-encoding");
-    }
-
-    private static bool IsRestrictedHeader(string headerName)
-    {
-        // Headers that shouldn't be copied during streaming to maintain transparency
-        var restrictedHeaders = new[]
-        {
-            "connection", "content-length", "transfer-encoding", "upgrade",
-            "date", "server", "via", "warning"
-        };
-
-        return restrictedHeaders.Contains(headerName.ToLowerInvariant());
     }
 }

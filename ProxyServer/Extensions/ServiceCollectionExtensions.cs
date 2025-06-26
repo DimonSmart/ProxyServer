@@ -10,7 +10,7 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// Adds proxy services to the service collection with decorator pattern configuration.
     /// Cache services are composed as decorators:
-    /// - No cache: NoCacheService (terminal)
+    /// - No cache: null (no caching)
     /// - Memory only: MemoryCacheService (terminal)
     /// - Disk only: DiskCacheService (terminal)
     /// - Memory + Disk: MemoryCacheDecorator wrapping DiskCacheService
@@ -75,8 +75,7 @@ public static class ServiceCollectionExtensions
             if (hasMemoryCache && hasDiskCache)
             {
                 var diskCache = provider.GetRequiredService<IDiskCacheService>();
-                var diskLogger = provider.GetRequiredService<ILogger<DiskCacheService>>();
-                var baseDiskService = new DiskCacheService(diskCache, settings, diskLogger);
+                var baseDiskService = new DiskOnlyCacheService(diskCache);
 
                 var memoryCache = provider.GetRequiredService<IMemoryCache>();
                 var memoryLogger = provider.GetRequiredService<ILogger<MemoryCacheDecorator>>();
@@ -87,8 +86,7 @@ public static class ServiceCollectionExtensions
             if (hasDiskCache)
             {
                 var diskCache = provider.GetRequiredService<IDiskCacheService>();
-                var logger = provider.GetRequiredService<ILogger<DiskCacheService>>();
-                return new DiskCacheService(diskCache, settings, logger);
+                return new DiskOnlyCacheService(diskCache);
             }
 
             // Case 3: Only memory enabled
@@ -100,8 +98,7 @@ public static class ServiceCollectionExtensions
             }
 
             // Case 4: No cache enabled
-            var noCacheLogger = provider.GetRequiredService<ILogger<NoCacheService>>();
-            return new NoCacheService(settings, noCacheLogger);
+            return new NullCacheService();
         });
     }
 }
