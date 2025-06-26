@@ -3,7 +3,7 @@ using DimonSmart.ProxyServer.Interfaces;
 namespace DimonSmart.ProxyServer.Services;
 
 public class CacheCleanupService(
-    IDiskCacheService diskCache,
+    IExtendedCacheService diskCache,
     ProxySettings settings,
     ILogger<CacheCleanupService> logger) : BackgroundService
 {

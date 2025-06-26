@@ -16,4 +16,9 @@ public class NullCacheService : ICacheService
     {
         return Task.CompletedTask;
     }
+
+    public Task ClearAsync()
+    {
+        return Task.CompletedTask;
+    }
 }

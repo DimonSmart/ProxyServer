@@ -70,6 +70,27 @@ public class MemoryCacheService : BaseCacheService, IDisposable
         return Task.CompletedTask;
     }
 
+    public override Task ClearAsync()
+    {
+        if (_disposed || _memoryCache == null)
+        {
+            return Task.CompletedTask;
+        }
+
+        try
+        {
+            // Memory cache doesn't have a clear method, dispose and recreate is not possible here
+            // Log warning as memory cache clearing is not fully supported
+            _logger.LogWarning("Memory cache clear requested, but MemoryCache doesn't support clearing. Consider restarting the application.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during memory cache clear attempt");
+        }
+
+        return Task.CompletedTask;
+    }
+
     public void Dispose()
     {
         if (!_disposed)

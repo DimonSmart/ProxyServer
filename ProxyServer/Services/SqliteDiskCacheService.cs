@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace DimonSmart.ProxyServer.Services;
 
-public class SqliteDiskCacheService : IDiskCacheService, IDisposable
+public class SqliteDiskCacheService : IExtendedCacheService, IDisposable
 {
     private readonly string _connectionString;
     private readonly ILogger<SqliteDiskCacheService> _logger;
@@ -155,36 +155,7 @@ public class SqliteDiskCacheService : IDiskCacheService, IDisposable
         }
     }
 
-    public async Task<bool> ContainsKeyAsync(string key)
-    {
-        if (_disposed) return false;
-
-        await _semaphore.WaitAsync();
-        try
-        {
-            using var connection = new SqliteConnection(_connectionString);
-            await connection.OpenAsync();
-
-            var sql = "SELECT 1 FROM cache_entries WHERE key = @key AND expires_at > @now LIMIT 1";
-            using var command = new SqliteCommand(sql, connection);
-            command.Parameters.AddWithValue("@key", key);
-            command.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-
-            var result = await command.ExecuteScalarAsync();
-            return result != null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error checking if cache contains key {Key}", key);
-            return false;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
-    }
-
-    public async Task RemoveAsync(string key)
+    public async Task ClearAsync()
     {
         if (_disposed) return;
 
@@ -194,15 +165,19 @@ public class SqliteDiskCacheService : IDiskCacheService, IDisposable
             using var connection = new SqliteConnection(_connectionString);
             await connection.OpenAsync();
 
-            var sql = "DELETE FROM cache_entries WHERE key = @key";
+            var sql = "DELETE FROM cache_entries";
             using var command = new SqliteCommand(sql, connection);
-            command.Parameters.AddWithValue("@key", key);
-
             await command.ExecuteNonQueryAsync();
+
+            // Vacuum to reclaim space
+            var vacuumCommand = new SqliteCommand("VACUUM", connection);
+            await vacuumCommand.ExecuteNonQueryAsync();
+
+            _logger.LogInformation("Cache cleared");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error removing cache entry for key {Key}", key);
+            _logger.LogError(ex, "Error clearing cache");
         }
         finally
         {
@@ -265,64 +240,6 @@ public class SqliteDiskCacheService : IDiskCacheService, IDisposable
         {
             _logger.LogError(ex, "Error getting cache size");
             return 0;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
-    }
-
-    public async Task<int> GetCountAsync()
-    {
-        if (_disposed) return 0;
-
-        await _semaphore.WaitAsync();
-        try
-        {
-            using var connection = new SqliteConnection(_connectionString);
-            await connection.OpenAsync();
-
-            var sql = "SELECT COUNT(*) FROM cache_entries WHERE expires_at > @now";
-            using var command = new SqliteCommand(sql, connection);
-            command.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-
-            var result = await command.ExecuteScalarAsync();
-            return Convert.ToInt32(result);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting cache count");
-            return 0;
-        }
-        finally
-        {
-            _semaphore.Release();
-        }
-    }
-
-    public async Task ClearAsync()
-    {
-        if (_disposed) return;
-
-        await _semaphore.WaitAsync();
-        try
-        {
-            using var connection = new SqliteConnection(_connectionString);
-            await connection.OpenAsync();
-
-            var sql = "DELETE FROM cache_entries";
-            using var command = new SqliteCommand(sql, connection);
-            await command.ExecuteNonQueryAsync();
-
-            // Vacuum to reclaim space
-            var vacuumCommand = new SqliteCommand("VACUUM", connection);
-            await vacuumCommand.ExecuteNonQueryAsync();
-
-            _logger.LogInformation("Cache cleared");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error clearing cache");
         }
         finally
         {

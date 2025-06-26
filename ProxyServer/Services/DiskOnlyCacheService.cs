@@ -3,13 +3,13 @@ using DimonSmart.ProxyServer.Interfaces;
 namespace DimonSmart.ProxyServer.Services;
 
 /// <summary>
-/// Cache service that uses only disk storage (wrapper around IDiskCacheService to implement ICacheService)
+/// Cache service that uses only disk storage (wrapper around ICacheService to implement ICacheService)
 /// </summary>
 public class DiskOnlyCacheService : ICacheService
 {
-    private readonly IDiskCacheService _diskCache;
+    private readonly ICacheService _diskCache;
 
-    public DiskOnlyCacheService(IDiskCacheService diskCache)
+    public DiskOnlyCacheService(ICacheService diskCache)
     {
         _diskCache = diskCache;
     }
@@ -22,5 +22,10 @@ public class DiskOnlyCacheService : ICacheService
     public async Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
     {
         await _diskCache.SetAsync(key, value, expiration);
+    }
+
+    public async Task ClearAsync()
+    {
+        await _diskCache.ClearAsync();
     }
 }

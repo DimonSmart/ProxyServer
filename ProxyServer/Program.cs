@@ -1,8 +1,16 @@
 ﻿using System.Text.Json;
 using DimonSmart.ProxyServer;
 using DimonSmart.ProxyServer.Extensions;
+using DimonSmart.ProxyServer.Services;
 
 const string SettingsFileName = "settings.json";
+
+// Handle command line arguments
+if (args.Length > 0)
+{
+    var exitCode = await HandleCommandLineAsync(args);
+    Environment.Exit(exitCode);
+}
 
 var settings = LoadSettings();
 var builder = WebApplication.CreateBuilder(args);
@@ -26,6 +34,25 @@ app.Lifetime.ApplicationStarted.Register(() =>
 });
 
 app.Run();
+
+static async Task<int> HandleCommandLineAsync(string[] args)
+{
+    var settings = LoadSettings();
+    
+    // Create a temporary service collection for command line operations
+    var services = new ServiceCollection();
+    services.AddLogging(builder => builder.AddConsole());
+    services.AddSingleton(settings);
+    services.AddProxyServices(settings);
+    services.AddTransient<CommandLineService>();
+    
+    #pragma warning disable ASP0000 // BuildServiceProvider is acceptable for command line scenarios
+    using var serviceProvider = services.BuildServiceProvider();
+    #pragma warning restore ASP0000
+    
+    var commandLineService = serviceProvider.GetRequiredService<CommandLineService>();
+    return await commandLineService.ExecuteAsync(args);
+}
 
 static ProxySettings LoadSettings()
 {

@@ -100,6 +100,33 @@ public class MemoryCacheDecorator : BaseCacheService, IDisposable
         }
     }
 
+    public override async Task ClearAsync()
+    {
+        if (_disposed) return;
+
+        _logger.LogDebug("MemoryCacheDecorator: Clearing cache");
+
+        try
+        {
+            // Clear inner cache first if available
+            if (_innerCache != null)
+            {
+                await _innerCache.ClearAsync();
+                _logger.LogDebug("Cleared inner cache");
+            }
+
+            // Memory cache doesn't have a clear method
+            if (_memoryCache != null)
+            {
+                _logger.LogWarning("Memory cache clear requested, but MemoryCache doesn't support clearing. Consider restarting the application.");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to clear cache");
+        }
+    }
+
     public void Dispose()
     {
         if (!_disposed)

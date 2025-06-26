@@ -9,10 +9,11 @@ Caching proxy server with authentication and access control.
 ### ✨ Core Capabilities
 
 - **Proxy Server**: Forwards HTTP requests to upstream servers
-- **Caching**: In-memory response caching for improved performance
+- **Caching**: Memory and disk-based response caching for improved performance
 - **Authentication**: Basic Auth with password support
 - **Access Control**: IP address filtering with mask support
 - **Security**: HTTPS support with certificates
+- **Command Line Interface**: Management commands for cache operations
 
 ### 🔧 Configuration
 
@@ -27,14 +28,40 @@ Configuration is done through the `settings.json` file:
     }
   ],
   "UpstreamUrl": "http://localhost:11434",
-  "UseMemoryCache": true,
-  "CacheDurationSeconds": 60,
-  "CacheMaxEntries": 1000,
-  "Port": 5000,
+  "EnableMemoryCache": true,
+  "EnableDiskCache": true,
+  "CacheDurationSeconds": 6000,
+  "DiskCache": {
+    "CachePath": "./cache/proxy_cache.db",
+    "MaxSizeMB": 1024,
+    "CleanupIntervalMinutes": 60
+  },
+  "Port": 8042,
   "CertificatePath": "certificate.pfx",
   "CertificatePassword": "password"
 }
 ```
+
+### 🖥️ Command Line Interface
+
+The proxy server supports command-line operations for management:
+
+```bash
+# Show help
+dotnet run help
+
+# Show current configuration
+dotnet run config
+
+# Clear all cached data
+dotnet run clear-cache
+```
+
+#### Available Commands
+
+- **`help`**: Display help information and available commands
+- **`config`**: Show current configuration including cache settings, ports, and file locations
+- **`clear-cache`**: Clear all cached data from both memory and disk caches
 
 ## CI/CD
 

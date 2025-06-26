@@ -29,8 +29,6 @@ public static class ServiceCollectionExtensions
 
         ConfigureMemoryCacheIfEnabled(services, settings);
         ConfigureDiskCacheIfEnabled(services, settings);
-
-        // Configure the main cache service using decorator pattern
         ConfigureCacheServiceWithDecorators(services, settings);
 
         return services;
@@ -53,8 +51,8 @@ public static class ServiceCollectionExtensions
     {
         if (!settings.EnableDiskCache) return;
 
-        // Register disk cache service
-        services.AddSingleton<IDiskCacheService>(provider =>
+        // Register disk cache service as IExtendedCacheService
+        services.AddSingleton<IExtendedCacheService>(provider =>
         {
             var logger = provider.GetRequiredService<ILogger<SqliteDiskCacheService>>();
             return new SqliteDiskCacheService(settings.DiskCache.CachePath, logger);
@@ -74,7 +72,7 @@ public static class ServiceCollectionExtensions
             // Case 1: Both memory and disk enabled - Memory decorator wrapping disk
             if (hasMemoryCache && hasDiskCache)
             {
-                var diskCache = provider.GetRequiredService<IDiskCacheService>();
+                var diskCache = provider.GetRequiredService<IExtendedCacheService>();
                 var baseDiskService = new DiskOnlyCacheService(diskCache);
 
                 var memoryCache = provider.GetRequiredService<IMemoryCache>();
@@ -85,7 +83,7 @@ public static class ServiceCollectionExtensions
             // Case 2: Only disk enabled
             if (hasDiskCache)
             {
-                var diskCache = provider.GetRequiredService<IDiskCacheService>();
+                var diskCache = provider.GetRequiredService<IExtendedCacheService>();
                 return new DiskOnlyCacheService(diskCache);
             }
 

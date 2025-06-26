@@ -18,4 +18,5 @@ public abstract class BaseCacheService : ICacheService
 
     public abstract Task<T?> GetAsync<T>(string key) where T : class;
     public abstract Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class;
+    public abstract Task ClearAsync();
 }
