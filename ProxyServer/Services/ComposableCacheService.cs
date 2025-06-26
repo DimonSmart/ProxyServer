@@ -5,9 +5,10 @@ namespace DimonSmart.ProxyServer.Services;
 /// <summary>
 /// Composable cache service that chains two cache implementations
 /// </summary>
-public class ComposableCacheService(ICacheService primaryCache, ICacheService? fallbackCache = null) : ICacheService
+public class ComposableCacheService(ICacheService primaryCache, ICacheService? fallbackCache = null, TimeSpan? promotionTtl = null) : ICacheService
 {
     private readonly ICacheService _primaryCache = primaryCache ?? throw new ArgumentNullException(nameof(primaryCache));
+    private readonly TimeSpan _promotionTtl = promotionTtl ?? TimeSpan.FromMinutes(30); // Default TTL for primary cache
 
     public async Task<T?> GetAsync<T>(string key) where T : class
     {
@@ -22,8 +23,8 @@ public class ComposableCacheService(ICacheService primaryCache, ICacheService? f
             var fallbackValue = await fallbackCache.GetAsync<T>(key);
             if (fallbackValue != null)
             {
-                // Promote value to primary cache
-                await PromoteValueToPrimaryAsync(key, fallbackValue);
+                // Promote value from fallback to primary cache using primary cache TTL
+                await _primaryCache.SetAsync(key, fallbackValue, _promotionTtl);
                 return fallbackValue;
             }
         }
@@ -52,21 +53,6 @@ public class ComposableCacheService(ICacheService primaryCache, ICacheService? f
         if (fallbackCache != null)
         {
             await fallbackCache.ClearAsync();
-        }
-    }
-
-    private async Task PromoteValueToPrimaryAsync<T>(string key, T value) where T : class
-    {
-        try
-        {
-            // Use a reasonable default expiration when promoting
-            // This could be made configurable if needed
-            var defaultExpiration = TimeSpan.FromHours(1);
-            await _primaryCache.SetAsync(key, value, defaultExpiration);
-        }
-        catch
-        {
-            // Ignore promotion errors - they shouldn't affect the main operation
         }
     }
 }

@@ -69,7 +69,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ICacheService>(provider =>
         {
-            // Both memory and disk cache enabled - Composable cache with memory as primary and disk as fallback
+            // Both memory and disk             // Both memory and disk cache enabled - Composable cache with memory as primary and disk as fallback and disk as fallback
             if (hasMemoryCache && hasDiskCache)
             {
                 var diskCache = provider.GetRequiredService<IExtendedCacheService>();
