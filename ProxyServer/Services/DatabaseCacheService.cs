@@ -7,7 +7,7 @@ namespace DimonSmart.ProxyServer.Services;
 /// <summary>
 /// Disk-based cache service using SQLite database
 /// </summary>
-public class DatabaseCacheService : ChainedCacheService, IExtendedCacheService, IDisposable
+public class DatabaseCacheService : ICacheService, IExtendedCacheService, IDisposable
 {
     private readonly string _connectionString;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
@@ -15,7 +15,7 @@ public class DatabaseCacheService : ChainedCacheService, IExtendedCacheService, 
 
     public ILogger<DatabaseCacheService> _logger { get; }
 
-    public DatabaseCacheService(string dbPath, ProxySettings settings, ILogger<DatabaseCacheService> logger) : base()
+    public DatabaseCacheService(string dbPath, ProxySettings settings, ILogger<DatabaseCacheService> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -64,9 +64,9 @@ public class DatabaseCacheService : ChainedCacheService, IExtendedCacheService, 
         }
     }
 
-    protected override async Task<T?> GetImplementationAsync<T>(string key) where T : class
+    public async Task<T?> GetAsync<T>(string key) where T : class
     {
-        if (_disposed) return null;
+        if (_disposed) return default(T);
 
         await _semaphore.WaitAsync();
         try
@@ -86,7 +86,7 @@ public class DatabaseCacheService : ChainedCacheService, IExtendedCacheService, 
             using var reader = await selectCommand.ExecuteReaderAsync();
             if (!await reader.ReadAsync())
             {
-                return null;
+                return default(T);
             }
 
             var data = (byte[])reader["data"];
@@ -106,12 +106,12 @@ public class DatabaseCacheService : ChainedCacheService, IExtendedCacheService, 
                 return JsonSerializer.Deserialize<T>(json);
             }
 
-            return null;
+            return default(T);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error getting cache entry for key {Key}", key);
-            return null;
+            return default(T);
         }
         finally
         {
@@ -119,7 +119,7 @@ public class DatabaseCacheService : ChainedCacheService, IExtendedCacheService, 
         }
     }
 
-    protected override async Task SetImplementationAsync<T>(string key, T value, TimeSpan expiration) where T : class
+    public async Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
     {
         if (_disposed) return;
 
@@ -160,7 +160,7 @@ public class DatabaseCacheService : ChainedCacheService, IExtendedCacheService, 
         }
     }
 
-    protected override async Task ClearImplementationAsync()
+    public async Task ClearAsync()
     {
         if (_disposed) return;
 

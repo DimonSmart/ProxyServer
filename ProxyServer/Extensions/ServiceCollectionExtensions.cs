@@ -9,11 +9,11 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Adds proxy services to the service collection with composition pattern configuration.
-    /// Cache services are composed as nested dependencies:
-    /// - No cache: null (no caching)
-    /// - Memory only: MemoryCacheService (terminal)
-    /// - Database only: DatabaseCacheService (terminal)
-    /// - Memory + Database: MemoryCacheService wrapping DatabaseCacheService
+    /// Cache services are composed using ComposableCacheService:
+    /// - No cache: NullCacheService
+    /// - Memory only: MemoryCacheService
+    /// - Database only: DatabaseCacheService
+    /// - Memory + Database: ComposableCacheService(MemoryCacheService, DatabaseCacheService)
     /// </summary>
     public static IServiceCollection AddProxyServices(this IServiceCollection services, ProxySettings settings)
     {
@@ -69,13 +69,14 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ICacheService>(provider =>
         {
-            // Both memory and disk cache enabled - Memory wrapping disk cache
+            // Both memory and disk cache enabled - Composable cache with memory as primary and disk as fallback
             if (hasMemoryCache && hasDiskCache)
             {
                 var diskCache = provider.GetRequiredService<IExtendedCacheService>();
                 var memoryCache = provider.GetRequiredService<IMemoryCache>();
                 var logger = provider.GetRequiredService<ILogger<MemoryCacheService>>();
-                return new MemoryCacheService(memoryCache, logger, diskCache);
+                var memoryCacheService = new MemoryCacheService(memoryCache, logger);
+                return new ComposableCacheService(memoryCacheService, diskCache);
             }
 
             // Only disk cache enabled
