@@ -7,15 +7,23 @@ public class ProxyMiddleware(
     RequestDelegate next,
     IProxyService proxyService,
     ICacheService cacheService,
-    ProxySettings settings)
+    ICacheKeyService cacheKeyService,
+    IResponseWriterService responseWriterService,
+    ICachePolicyService cachePolicyService,
+    ProxySettings settings,
+    ILogger<ProxyMiddleware> logger)
 {
     private readonly ProxySettings _settings = settings;
+    private readonly ILogger<ProxyMiddleware> _logger = logger;
 
     public async Task InvokeAsync(HttpContext context)
     {
         var targetUrl = _settings.UpstreamUrl + context.Request.Path + context.Request.QueryString;
 
-        if (cacheService.CanCache(context))
+        _logger.LogInformation("ProxyMiddleware: Processing request {Method} {Path}, CanCache: {CanCache}",
+            context.Request.Method, context.Request.Path, cachePolicyService.CanCache(context));
+
+        if (cachePolicyService.CanCache(context))
         {
             await HandleCachedRequest(context, targetUrl);
         }
@@ -27,22 +35,20 @@ public class ProxyMiddleware(
 
     private async Task HandleCachedRequest(HttpContext context, string targetUrl)
     {
-        var cacheKey = await cacheService.GenerateCacheKeyAsync(context);
+        var cacheKey = await cacheKeyService.GenerateCacheKeyAsync(context);
+        _logger.LogInformation("ProxyMiddleware: Generated cache key: {CacheKey}", cacheKey);
+
         var cachedResponse = await cacheService.GetAsync<CachedResponse>(cacheKey);
 
         if (cachedResponse != null)
         {
-            // Use streaming cache if enabled and response was originally streamed
-            if (_settings.StreamingCache.EnableStreamingCache && cachedResponse.WasStreamed)
-            {
-                await cacheService.StreamCachedResponseAsync(context, cachedResponse, context.RequestAborted);
-            }
-            else
-            {
-                await cacheService.WriteCachedResponseAsync(context, cachedResponse, context.RequestAborted);
-            }
+            _logger.LogInformation("ProxyMiddleware: Cache HIT for key: {CacheKey}", cacheKey);
+
+            await responseWriterService.WriteCachedResponseAsync(context, cachedResponse, context.RequestAborted);
             return;
         }
+
+        _logger.LogInformation("ProxyMiddleware: Cache MISS for key: {CacheKey}, forwarding to upstream", cacheKey);
 
         var response = await proxyService.ForwardRequestAsync(context, targetUrl, context.RequestAborted);
 
@@ -53,9 +59,14 @@ public class ProxyMiddleware(
             // Response was already sent to client during streaming, just cache it
             if (ShouldCacheResponse(response))
             {
+                _logger.LogDebug("ProxyMiddleware: Caching streamed response for key: {CacheKey}", cacheKey);
                 var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
-                var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body, response.WasStreamed);
+                var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body ?? [], response.WasStreamed);
                 await cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
+            }
+            else
+            {
+                _logger.LogDebug("ProxyMiddleware: Not caching streamed response for key {CacheKey} - status: {StatusCode}", cacheKey, response.StatusCode);
             }
         }
         else
@@ -63,29 +74,56 @@ public class ProxyMiddleware(
             // For non-streamed responses, we need to send the response to the client
             context.Response.StatusCode = response.StatusCode;
 
-            // Copy headers
+            // Headers that should not be copied to avoid conflicts
+            var skipHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Transfer-Encoding",
+                "Content-Length",
+                "Connection",
+                "Date",
+                "Server"
+            };
+
+            // Copy headers, excluding problematic ones
             foreach (var header in response.Headers)
             {
-                try
+                if (!skipHeaders.Contains(header.Key))
                 {
-                    context.Response.Headers[header.Key] = header.Value;
-                }
-                catch
-                {
-                    // Ignore headers that can't be set
+                    try
+                    {
+                        context.Response.Headers[header.Key] = header.Value;
+                    }
+                    catch
+                    {
+                        // Ignore headers that can't be set
+                    }
                 }
             }
 
-            // Write response body
-            await context.Response.Body.WriteAsync(response.Body, context.RequestAborted);
+            // Always set content length to avoid chunked encoding conflicts
+            if (response.Body?.Length > 0)
+            {
+                context.Response.ContentLength = response.Body.Length;
+                await context.Response.Body.WriteAsync(response.Body, context.RequestAborted);
+            }
+            else
+            {
+                context.Response.ContentLength = 0;
+            }
+
             await context.Response.Body.FlushAsync(context.RequestAborted);
 
             // Cache the response if conditions are met
             if (ShouldCacheResponse(response))
             {
+                _logger.LogDebug("ProxyMiddleware: Caching response for key: {CacheKey}", cacheKey);
                 var cacheExpiration = TimeSpan.FromSeconds(_settings.CacheDurationSeconds);
-                var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body, response.WasStreamed);
+                var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body ?? [], response.WasStreamed);
                 await cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
+            }
+            else
+            {
+                _logger.LogDebug("ProxyMiddleware: Not caching response for key {CacheKey} - status: {StatusCode}", cacheKey, response.StatusCode);
             }
         }
     }
@@ -100,21 +138,43 @@ public class ProxyMiddleware(
             // For non-streamed responses, we need to send the response to the client
             context.Response.StatusCode = response.StatusCode;
 
-            // Copy headers
+            // Headers that should not be copied to avoid conflicts
+            var skipHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "Transfer-Encoding",
+                "Content-Length",
+                "Connection",
+                "Date",
+                "Server"
+            };
+
+            // Copy headers, excluding problematic ones
             foreach (var header in response.Headers)
             {
-                try
+                if (!skipHeaders.Contains(header.Key))
                 {
-                    context.Response.Headers[header.Key] = header.Value;
-                }
-                catch
-                {
-                    // Ignore headers that can't be set
+                    try
+                    {
+                        context.Response.Headers[header.Key] = header.Value;
+                    }
+                    catch
+                    {
+                        // Ignore headers that can't be set
+                    }
                 }
             }
 
-            // Write response body
-            await context.Response.Body.WriteAsync(response.Body, context.RequestAborted);
+            // Always set content length to avoid chunked encoding conflicts
+            if (response.Body?.Length > 0)
+            {
+                context.Response.ContentLength = response.Body.Length;
+                await context.Response.Body.WriteAsync(response.Body, context.RequestAborted);
+            }
+            else
+            {
+                context.Response.ContentLength = 0;
+            }
+
             await context.Response.Body.FlushAsync(context.RequestAborted);
         }
     }

@@ -21,11 +21,6 @@ public class HealthStatus
     public TimeSpan Uptime { get; set; }
 
     /// <summary>
-    /// Cache statistics
-    /// </summary>
-    public CacheStatistics Cache { get; set; } = new();
-
-    /// <summary>
     /// Upstream server configuration
     /// </summary>
     public string UpstreamUrl { get; set; } = string.Empty;

@@ -37,7 +37,6 @@ public class HealthController : ControllerBase
             Status = "Healthy",
             Version = version,
             Uptime = uptime,
-            Cache = _cacheService.GetStatistics(),
             UpstreamUrl = _settings.UpstreamUrl,
             Timestamp = DateTime.UtcNow,
             Details = new Dictionary<string, object>
@@ -60,15 +59,5 @@ public class HealthController : ControllerBase
     public ActionResult<object> Ping()
     {
         return Ok(new { status = "ok", timestamp = DateTime.UtcNow });
-    }
-
-    /// <summary>
-    /// Cache statistics endpoint
-    /// </summary>
-    /// <returns>Cache statistics</returns>
-    [HttpGet("stats/cache")]
-    public ActionResult<CacheStatistics> GetCacheStats()
-    {
-        return Ok(_cacheService.GetStatistics());
     }
 }

@@ -52,36 +52,26 @@ public static class ApplicationBuilderExtensions
                 }
             });
 
-            endpoints.MapGet("/stats/cache", async context =>
-            {
-                var cacheService = context.RequestServices.GetRequiredService<ICacheService>();
-                var settings = context.RequestServices.GetRequiredService<ProxySettings>();
-
-                var healthController = new Controllers.HealthController(cacheService, settings);
-                var result = healthController.GetCacheStats();
-
-                if (result.Result is OkObjectResult okResult)
-                {
-                    await context.Response.WriteAsJsonAsync(okResult.Value);
-                }
-                else
-                {
-                    await context.Response.WriteAsJsonAsync(result.Value);
-                }
-            });
-
             // For any request that doesn't match above, use the proxy middleware
             endpoints.Map("{**catch-all}", async context =>
             {
                 var proxyService = context.RequestServices.GetRequiredService<IProxyService>();
                 var cacheService = context.RequestServices.GetRequiredService<ICacheService>();
+                var cacheKeyService = context.RequestServices.GetRequiredService<ICacheKeyService>();
+                var responseWriterService = context.RequestServices.GetRequiredService<IResponseWriterService>();
+                var cachePolicyService = context.RequestServices.GetRequiredService<ICachePolicyService>();
                 var settings = context.RequestServices.GetRequiredService<ProxySettings>();
+                var logger = context.RequestServices.GetRequiredService<ILogger<ProxyMiddleware>>();
 
                 var proxyMiddleware = new ProxyMiddleware(
                     async (ctx) => await Task.CompletedTask,
                     proxyService,
                     cacheService,
-                    settings);
+                    cacheKeyService,
+                    responseWriterService,
+                    cachePolicyService,
+                    settings,
+                    logger);
 
                 await proxyMiddleware.InvokeAsync(context);
             });

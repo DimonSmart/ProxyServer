@@ -1,24 +1,28 @@
 using DimonSmart.ProxyServer.Interfaces;
 using DimonSmart.ProxyServer.Middleware;
 using DimonSmart.ProxyServer.Services;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace DimonSmart.ProxyServer.Extensions;
 
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds proxy services to the service collection with linear configuration based on cache settings.
-    /// All combinations of EnableMemoryCache and EnableDiskCache are valid:
-    /// - Both false: No caching
-    /// - EnableMemoryCache only: Memory-only cache
-    /// - EnableDiskCache only: Disk-only cache
-    /// - Both true: Hybrid cache (memory + disk)
+    /// Adds proxy services to the service collection with decorator pattern configuration.
+    /// Cache services are composed as decorators:
+    /// - No cache: NoCacheService (terminal)
+    /// - Memory only: MemoryCacheService (terminal)
+    /// - Disk only: DiskCacheService (terminal)
+    /// - Memory + Disk: MemoryCacheDecorator wrapping DiskCacheService
     /// </summary>
     public static IServiceCollection AddProxyServices(this IServiceCollection services, ProxySettings settings)
     {
         services.AddSingleton(settings);
         services.AddSingleton<IAccessControlService, AccessControlService>();
         services.AddSingleton<IExceptionHandlingService, ExceptionHandlingService>();
+        services.AddSingleton<ICachePolicyService, CachePolicyService>();
+        services.AddSingleton<ICacheKeyService, CacheKeyService>();
+        services.AddSingleton<IResponseWriterService, ResponseWriterService>();
         services.AddScoped<ExceptionHandlingMiddleware>();
         services.AddHttpClient<IProxyService, ProxyService>();
         services.AddControllers();
@@ -26,8 +30,8 @@ public static class ServiceCollectionExtensions
         ConfigureMemoryCacheIfEnabled(services, settings);
         ConfigureDiskCacheIfEnabled(services, settings);
 
-        // Configure the main cache service based on enabled cache types
-        ConfigureCacheService(services, settings);
+        // Configure the main cache service using decorator pattern
+        ConfigureCacheServiceWithDecorators(services, settings);
 
         return services;
     }
@@ -60,31 +64,44 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<CacheCleanupService>();
     }
 
-    private static void ConfigureCacheService(IServiceCollection services, ProxySettings settings)
+    private static void ConfigureCacheServiceWithDecorators(IServiceCollection services, ProxySettings settings)
     {
         var hasMemoryCache = settings.EnableMemoryCache;
         var hasDiskCache = settings.EnableDiskCache;
 
-        // Hybrid cache: both memory and disk enabled
-        if (hasMemoryCache && hasDiskCache)
+        services.AddSingleton<ICacheService>(provider =>
         {
-            services.AddSingleton<ICacheService, HybridCacheService>();
-            return;
-        }
-
-        // Disk-only cache: only disk enabled
-        if (hasDiskCache)
-        {
-            services.AddSingleton<ICacheService>(provider =>
+            // Case 1: Both memory and disk enabled - Memory decorator wrapping disk
+            if (hasMemoryCache && hasDiskCache)
             {
                 var diskCache = provider.GetRequiredService<IDiskCacheService>();
-                var logger = provider.GetRequiredService<ILogger<DiskOnlyCacheService>>();
-                return new DiskOnlyCacheService(diskCache, settings, logger);
-            });
-            return;
-        }
+                var diskLogger = provider.GetRequiredService<ILogger<DiskCacheService>>();
+                var baseDiskService = new DiskCacheService(diskCache, settings, diskLogger);
 
-        // Memory-only cache: only memory enabled or neither enabled (fallback to memory)
-        services.AddSingleton<ICacheService, CacheService>();
+                var memoryCache = provider.GetRequiredService<IMemoryCache>();
+                var memoryLogger = provider.GetRequiredService<ILogger<MemoryCacheDecorator>>();
+                return new MemoryCacheDecorator(memoryCache, settings, memoryLogger, baseDiskService);
+            }
+
+            // Case 2: Only disk enabled
+            if (hasDiskCache)
+            {
+                var diskCache = provider.GetRequiredService<IDiskCacheService>();
+                var logger = provider.GetRequiredService<ILogger<DiskCacheService>>();
+                return new DiskCacheService(diskCache, settings, logger);
+            }
+
+            // Case 3: Only memory enabled
+            if (hasMemoryCache)
+            {
+                var memoryCache = provider.GetRequiredService<IMemoryCache>();
+                var logger = provider.GetRequiredService<ILogger<MemoryCacheService>>();
+                return new MemoryCacheService(memoryCache, settings, logger);
+            }
+
+            // Case 4: No cache enabled
+            var noCacheLogger = provider.GetRequiredService<ILogger<NoCacheService>>();
+            return new NoCacheService(settings, noCacheLogger);
+        });
     }
 }

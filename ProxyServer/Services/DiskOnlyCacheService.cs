@@ -1,5 +1,7 @@
 using DimonSmart.ProxyServer.Interfaces;
 using DimonSmart.ProxyServer.Models;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace DimonSmart.ProxyServer.Services;
 
@@ -11,10 +13,6 @@ public class DiskOnlyCacheService : ICacheService
     private readonly IDiskCacheService _diskCache;
     private readonly ProxySettings _settings;
     private readonly ILogger<DiskOnlyCacheService> _logger;
-    private long _totalRequests;
-    private long _cacheHits;
-    private long _cacheMisses;
-    private readonly object _statsLock = new();
 
     public DiskOnlyCacheService(
         IDiskCacheService diskCache,
@@ -28,25 +26,7 @@ public class DiskOnlyCacheService : ICacheService
 
     public async Task<T?> GetAsync<T>(string key) where T : class
     {
-        lock (_statsLock)
-        {
-            _totalRequests++;
-        }
-
         var result = await _diskCache.GetAsync<T>(key);
-
-        lock (_statsLock)
-        {
-            if (result != null)
-            {
-                _cacheHits++;
-            }
-            else
-            {
-                _cacheMisses++;
-            }
-        }
-
         return result;
     }
 
@@ -71,41 +51,6 @@ public class DiskOnlyCacheService : ICacheService
         }
 
         return cacheKey;
-    }
-
-    public bool CanCache(HttpContext context)
-    {
-        if (!_settings.EnableDiskCache) return false;
-
-        var isGetOrPost = context.Request.Method.Equals("GET", StringComparison.OrdinalIgnoreCase) ||
-                         context.Request.Method.Equals("POST", StringComparison.OrdinalIgnoreCase);
-
-        var isNotFileUpload = string.IsNullOrEmpty(context.Request.ContentType) ||
-                             !context.Request.ContentType.Contains("multipart/form-data", StringComparison.OrdinalIgnoreCase);
-
-        return isGetOrPost && isNotFileUpload;
-    }
-
-    public CacheStatistics GetStatistics()
-    {
-        lock (_statsLock)
-        {
-            var diskEntries = _diskCache.GetCountAsync().GetAwaiter().GetResult();
-
-            return new CacheStatistics
-            {
-                TotalRequests = _totalRequests,
-                CacheHits = _cacheHits,
-                CacheMisses = _cacheMisses,
-                CurrentEntries = diskEntries,
-                MaxEntries = _settings.CacheMaxEntries,
-                IsEnabled = _settings.EnableDiskCache,
-                HotCacheHits = 0, // No hot cache in disk-only mode
-                DiskCacheHits = _cacheHits,
-                HotCacheEntries = 0,
-                DiskCacheEntries = diskEntries
-            };
-        }
     }
 
     public async Task StreamCachedResponseAsync(HttpContext context, CachedResponse cachedResponse, CancellationToken cancellationToken = default)

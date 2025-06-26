@@ -8,6 +8,7 @@ using Xunit;
 using Xunit.Abstractions;
 using DimonSmart.ProxyServer;
 using DimonSmart.ProxyServer.Extensions;
+using DimonSmart.ProxyServer.Models;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -258,10 +259,6 @@ public class ProxyServerFunctionalTests : IDisposable
         Assert.True(healthData.TryGetProperty("uptime", out var uptime));
         Assert.False(string.IsNullOrEmpty(uptime.GetString()));
 
-        Assert.True(healthData.TryGetProperty("cache", out var cache));
-        Assert.True(cache.TryGetProperty("isEnabled", out var cacheEnabled));
-        Assert.True(cacheEnabled.GetBoolean());
-
         Assert.True(healthData.TryGetProperty("upstreamUrl", out var upstream));
         Assert.Equal($"http://localhost:{TestServerPort}", upstream.GetString());
 
@@ -295,62 +292,6 @@ public class ProxyServerFunctionalTests : IDisposable
         Assert.False(string.IsNullOrEmpty(timestamp.GetString()));
 
         _output.WriteLine("✓ Ping endpoint working correctly");
-    }
-
-    /// <summary>
-    /// Tests the cache statistics endpoint and verifies cache metrics
-    /// </summary>
-    [Fact]
-    public async Task ProxyServer_CacheStats_ShouldReturnCacheStatistics()
-    {
-        // Arrange - Make some requests to generate cache statistics
-        await ResetTestServerStats();
-        var request = new { Text = "Stats Test" };
-
-        // Make first request (cache miss)
-        var response1 = await MakeProxyRequest("/api/StringReverse/reverse",
-            CreateJsonContent(request));
-        Assert.Equal(HttpStatusCode.OK, response1.StatusCode);
-
-        // Make second request (cache hit)
-        var response2 = await MakeProxyRequest("/api/StringReverse/reverse",
-            CreateJsonContent(request));
-        Assert.Equal(HttpStatusCode.OK, response2.StatusCode);
-
-        // Act - Get cache statistics
-        var statsResponse = await _httpClient.GetAsync($"http://localhost:{ProxyServerPort}/stats/cache");
-
-        // Assert
-        Assert.Equal(HttpStatusCode.OK, statsResponse.StatusCode);
-
-        var content = await statsResponse.Content.ReadAsStringAsync();
-        _output.WriteLine($"Cache stats response: {content}");
-
-        var cacheStats = JsonSerializer.Deserialize<JsonElement>(content, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
-
-        // Verify cache statistics structure
-        Assert.True(cacheStats.TryGetProperty("totalRequests", out var totalRequests));
-        Assert.True(totalRequests.GetInt64() >= 2); // At least 2 requests
-
-        Assert.True(cacheStats.TryGetProperty("cacheHits", out var cacheHits));
-        Assert.True(cacheHits.GetInt64() >= 1); // At least 1 hit
-
-        Assert.True(cacheStats.TryGetProperty("cacheMisses", out var cacheMisses));
-        Assert.True(cacheMisses.GetInt64() >= 1); // At least 1 miss
-
-        Assert.True(cacheStats.TryGetProperty("hitRate", out var hitRate));
-        Assert.True(hitRate.GetDouble() >= 0 && hitRate.GetDouble() <= 100);
-
-        Assert.True(cacheStats.TryGetProperty("isEnabled", out var isEnabled));
-        Assert.True(isEnabled.GetBoolean());
-
-        Assert.True(cacheStats.TryGetProperty("maxEntries", out var maxEntries));
-        Assert.Equal(100, maxEntries.GetInt32()); // From test configuration
-
-        _output.WriteLine("✓ Cache statistics endpoint working correctly");
     }
 
     /// <summary>
@@ -508,124 +449,6 @@ public class ProxyServerFunctionalTests : IDisposable
     }
 
     /// <summary>
-    /// Creates and configures a proxy server instance for testing
-    /// </summary>
-    /// <returns>A configured proxy server host</returns>
-    private IHost CreateProxyServer()
-    {
-        var settings = new ProxySettings
-        {
-            UpstreamUrl = $"http://localhost:{TestServerPort}",
-            EnableMemoryCache = true,
-            EnableDiskCache = true,
-            CacheDurationSeconds = 300, // 5 minutes for tests
-            CacheMaxEntries = 100,
-            Port = ProxyServerPort,
-            AllowedCredentials = new List<DimonSmart.ProxyServer.Models.CredentialPair>
-            {
-                new()
-                {
-                    IPs = new List<string> { "127.0.0.1", "::1", "*.*.*.*" },
-                    Passwords = new List<string> { TestPassword }
-                }
-            },
-            DiskCache = new DiskCacheSettings
-            {
-                CachePath = _testDbPath
-            }
-        };
-
-        var builder = Microsoft.Extensions.Hosting.Host.CreateDefaultBuilder()
-            .ConfigureWebHostDefaults(webBuilder =>
-            {
-                webBuilder
-                    .UseUrls($"http://localhost:{ProxyServerPort}")
-                    .ConfigureKestrel(options =>
-                    {
-                        options.AllowSynchronousIO = true; // Allow synchronous operations for tests
-                    })
-                    .ConfigureServices(services =>
-                    {
-                        services.AddProxyServices(settings);
-                    })
-                    .Configure(app =>
-                    {
-                        app.UseProxyServer();
-                    });
-            });
-
-        return builder.Build();
-    }
-
-    /// <summary>
-    /// Makes an authenticated request to the proxy server
-    /// </summary>
-    /// <param name="path">The API path to request</param>
-    /// <param name="content">The HTTP content to send</param>
-    /// <returns>The HTTP response from the proxy server</returns>
-    private async Task<HttpResponseMessage> MakeProxyRequest(string path, HttpContent content)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{ProxyServerPort}{path}")
-        {
-            Content = content
-        };
-
-        // Add Basic Auth header
-        var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"user:{TestPassword}"));
-        request.Headers.Add("Authorization", $"Basic {credentials}");
-
-        return await _httpClient.SendAsync(request);
-    }
-
-    /// <summary>
-    /// Creates JSON content from an object for HTTP requests
-    /// </summary>
-    /// <param name="data">The object to serialize to JSON</param>
-    /// <returns>StringContent with JSON data</returns>
-    private StringContent CreateJsonContent(object data)
-    {
-        return new StringContent(
-            JsonSerializer.Serialize(data),
-            Encoding.UTF8,
-            "application/json");
-    }
-
-    /// <summary>
-    /// Deserializes HTTP response content to the specified type
-    /// </summary>
-    /// <typeparam name="T">The type to deserialize to</typeparam>
-    /// <param name="response">The HTTP response containing JSON data</param>
-    /// <returns>The deserialized object</returns>
-    private async Task<T> DeserializeResponse<T>(HttpResponseMessage response)
-    {
-        var content = await response.Content.ReadAsStringAsync();
-        return JsonSerializer.Deserialize<T>(content, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        })!;
-    }
-
-    /// <summary>
-    /// Gets current statistics from the test server
-    /// </summary>
-    /// <returns>Test server statistics</returns>
-    private async Task<TestServerStats> GetTestServerStats()
-    {
-        var response = await _httpClient.GetAsync($"http://localhost:{TestServerPort}/api/StringReverse/stats");
-        return await DeserializeResponse<TestServerStats>(response);
-    }
-
-    /// <summary>
-    /// Resets the test server statistics
-    /// </summary>
-    private async Task ResetTestServerStats()
-    {
-        await _httpClient.PostAsync($"http://localhost:{TestServerPort}/api/StringReverse/reset", null);
-    }
-
-
-
-    /// <summary>
     /// Tests that cached non-streaming responses preserve original headers and format
     /// </summary>
     [Fact]
@@ -731,5 +554,120 @@ public class ProxyServerFunctionalTests : IDisposable
             // Log but don't fail the test
             Console.WriteLine($"Info: Could not delete test database file {_testDbPath}: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Makes an authenticated request to the proxy server
+    /// </summary>
+    /// <param name="path">The API path to request</param>
+    /// <param name="content">The HTTP content to send</param>
+    /// <returns>The HTTP response from the proxy server</returns>
+    private async Task<HttpResponseMessage> MakeProxyRequest(string path, HttpContent content)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{ProxyServerPort}{path}")
+        {
+            Content = content
+        };
+
+        // Add Basic Auth header
+        var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"user:{TestPassword}"));
+        request.Headers.Add("Authorization", $"Basic {credentials}");
+
+        return await _httpClient.SendAsync(request);
+    }
+
+    /// <summary>
+    /// Makes an unauthenticated request to the proxy server (for cache testing)
+    /// </summary>
+    /// <param name="path">The API path to request</param>
+    /// <param name="content">The HTTP content to send</param>
+    /// <returns>The HTTP response from the proxy server</returns>
+    private async Task<HttpResponseMessage> MakeUnauthenticatedProxyRequest(string path, HttpContent content)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{ProxyServerPort}{path}")
+        {
+            Content = content
+        };
+
+        // No Authorization header - allows caching
+        return await _httpClient.SendAsync(request);
+    }
+
+    /// <summary>
+    /// Creates JSON content from an object for HTTP requests
+    /// </summary>
+    /// <param name="data">The object to serialize to JSON</param>
+    /// <returns>StringContent with JSON data</returns>
+    private StringContent CreateJsonContent(object data)
+    {
+        return new StringContent(
+            JsonSerializer.Serialize(data),
+            Encoding.UTF8,
+            "application/json");
+    }
+
+    /// <summary>
+    /// Deserializes HTTP response content to the specified type
+    /// </summary>
+    /// <typeparam name="T">The type to deserialize to</typeparam>
+    /// <param name="response">The HTTP response containing JSON data</param>
+    /// <returns>The deserialized object</returns>
+    private async Task<T> DeserializeResponse<T>(HttpResponseMessage response)
+    {
+        var content = await response.Content.ReadAsStringAsync();
+        return JsonSerializer.Deserialize<T>(content, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        })!;
+    }
+
+    /// <summary>
+    /// Gets current statistics from the test server
+    /// </summary>
+    /// <returns>Test server statistics</returns>
+    private async Task<TestServerStats> GetTestServerStats()
+    {
+        var response = await _httpClient.GetAsync($"http://localhost:{TestServerPort}/api/StringReverse/stats");
+        return await DeserializeResponse<TestServerStats>(response);
+    }
+
+    /// <summary>
+    /// Resets the test server statistics
+    /// </summary>
+    private async Task ResetTestServerStats()
+    {
+        await _httpClient.PostAsync($"http://localhost:{TestServerPort}/api/StringReverse/reset", null);
+    }
+
+    /// <summary>
+    /// Creates and configures the proxy server for testing
+    /// </summary>
+    /// <returns>Configured proxy server host</returns>
+    private IHost CreateProxyServer()
+    {
+        var proxySettings = new ProxySettings
+        {
+            UpstreamUrl = $"http://localhost:{TestServerPort}",
+            EnableMemoryCache = true,
+            EnableDiskCache = true,
+            Port = ProxyServerPort,
+            AllowedCredentials = new List<CredentialPair>
+            {
+                new() { IPs = ["*"], Passwords = [TestPassword] }
+            },
+            DiskCache = new DiskCacheSettings
+            {
+                CachePath = _testDbPath
+            }
+        };
+
+        var builder = WebApplication.CreateBuilder();
+        builder.Services.AddProxyServices(proxySettings);
+        builder.WebHost.UseUrls($"http://localhost:{ProxyServerPort}");
+
+        var app = builder.Build();
+        app.UseProxyServer();
+
+        return app;
     }
 }
