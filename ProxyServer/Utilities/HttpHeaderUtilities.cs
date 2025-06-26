@@ -6,13 +6,13 @@ namespace DimonSmart.ProxyServer.Utilities;
 public static class HttpHeaderUtilities
 {
     /// <summary>
-    /// Headers that shouldn't be copied to maintain transparency and avoid conflicts
+    /// Headers that shouldn't be copied to avoid HTTP protocol conflicts.
+    /// This list contains only the most essential headers that ASP.NET Core manages automatically
+    /// or that can cause protocol-level issues when copied.
     /// </summary>
-    private static readonly string[] RestrictedHeaders = 
+    private static readonly string[] RestrictedHeaders =
     [
-        "connection", "content-length", "transfer-encoding", "upgrade",
-        "date", "server", "via", "warning", "age", "etag", "expires",
-        "last-modified", "cache-control", "vary"
+        "connection", "content-length", "transfer-encoding", "upgrade"
     ];
 
     /// <summary>
