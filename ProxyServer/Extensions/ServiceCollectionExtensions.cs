@@ -55,7 +55,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IExtendedCacheService>(provider =>
         {
             var logger = provider.GetRequiredService<ILogger<DatabaseCacheService>>();
-            return new DatabaseCacheService(settings.DiskCache.CachePath, logger);
+            return new DatabaseCacheService(settings.DiskCache.CachePath, settings, logger);
         });
 
         // Register cache cleanup service
@@ -69,30 +69,30 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ICacheService>(provider =>
         {
-            // Case 1: Both memory and database enabled - Memory wrapping database
+            // Both memory and disk cache enabled - Memory wrapping disk cache
             if (hasMemoryCache && hasDiskCache)
             {
                 var diskCache = provider.GetRequiredService<IExtendedCacheService>();
                 var memoryCache = provider.GetRequiredService<IMemoryCache>();
                 var logger = provider.GetRequiredService<ILogger<MemoryCacheService>>();
-                return new MemoryCacheService(memoryCache, settings, logger, diskCache);
+                return new MemoryCacheService(memoryCache, logger, diskCache);
             }
 
-            // Case 2: Only database enabled
+            // Only disk cache enabled
             if (hasDiskCache)
             {
                 return provider.GetRequiredService<IExtendedCacheService>();
             }
 
-            // Case 3: Only memory enabled
+            // Only memory cache enabled
             if (hasMemoryCache)
             {
                 var memoryCache = provider.GetRequiredService<IMemoryCache>();
                 var logger = provider.GetRequiredService<ILogger<MemoryCacheService>>();
-                return new MemoryCacheService(memoryCache, settings, logger);
+                return new MemoryCacheService(memoryCache, logger);
             }
 
-            // Case 4: No cache enabled
+            // No cache enabled
             return new NullCacheService();
         });
     }

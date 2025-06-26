@@ -8,56 +8,29 @@ namespace DimonSmart.ProxyServer.Services;
 /// </summary>
 public class MemoryCacheService(
     IMemoryCache? memoryCache,
-    ProxySettings settings,
-    ILogger<MemoryCacheService> logger,
-    ICacheService? innerCache = null) : BaseCacheService(settings, logger), IDisposable
+    ILogger<MemoryCacheService> _logger,
+    ICacheService? innerCache = null) : ChainedCacheService(innerCache), IDisposable
 {
     private bool _disposed = false;
 
-    public override async Task<T?> GetAsync<T>(string key) where T : class
+    protected override Task<T?> GetImplementationAsync<T>(string key) where T : class
     {
-        if (_disposed) return null;
+        if (_disposed) return Task.FromResult<T?>(null);
 
-        // First check memory cache
         if (memoryCache != null && memoryCache.TryGetValue(key, out T? value))
         {
             _logger.LogDebug("Memory cache hit: {Key}", key);
-            return value;
+            return Task.FromResult(value);
         }
 
         _logger.LogDebug("Memory cache miss: {Key}", key);
-
-        // If not found in memory and we have an inner cache, check it
-        if (innerCache != null)
-        {
-            var innerValue = await innerCache.GetAsync<T>(key);
-            if (innerValue != null)
-            {
-                _logger.LogDebug("Inner cache hit, promoting to memory: {Key}", key);
-
-                // Promote to memory cache with shorter expiration
-                if (memoryCache != null)
-                {
-                    var options = new MemoryCacheEntryOptions()
-                        .SetAbsoluteExpiration(TimeSpan.FromMinutes(5)) // Shorter expiration for promoted items
-                        .SetSize(1)
-                        .SetPriority(CacheItemPriority.Normal);
-
-                    memoryCache.Set(key, innerValue, options);
-                }
-
-                return innerValue;
-            }
-        }
-
-        return null;
+        return Task.FromResult<T?>(null);
     }
 
-    public override async Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
+    protected override Task SetImplementationAsync<T>(string key, T value, TimeSpan expiration) where T : class
     {
-        if (_disposed) return;
+        if (_disposed) return Task.CompletedTask;
 
-        // Store in memory cache if available
         if (memoryCache != null)
         {
             try
@@ -76,24 +49,17 @@ public class MemoryCacheService(
             }
         }
 
-        // Also store in inner cache if available
-        if (innerCache != null)
-        {
-            await innerCache.SetAsync(key, value, expiration);
-        }
+        return Task.CompletedTask;
     }
 
-    public override async Task ClearAsync()
+    protected override Task ClearImplementationAsync()
     {
-        if (_disposed) return;
+        if (_disposed) return Task.CompletedTask;
 
-        // Clear memory cache
         if (memoryCache != null)
         {
             try
             {
-                // Memory cache doesn't have a clear method, dispose and recreate is not possible here
-                // Log warning as memory cache clearing is not fully supported
                 _logger.LogWarning("Memory cache clear requested, but MemoryCache doesn't support clearing. Consider restarting the application.");
             }
             catch (Exception ex)
@@ -102,11 +68,24 @@ public class MemoryCacheService(
             }
         }
 
-        // Clear inner cache if available
-        if (innerCache != null)
+        return Task.CompletedTask;
+    }
+
+    protected override Task OnValuePromotedAsync<T>(string key, T value) where T : class
+    {
+        _logger.LogDebug("Promoting value from disk cache to memory: {Key}", key);
+
+        if (memoryCache != null)
         {
-            await innerCache.ClearAsync();
+            var options = new MemoryCacheEntryOptions()
+                .SetAbsoluteExpiration(TimeSpan.FromMinutes(5)) // Shorter expiration for promoted items
+                .SetSize(1)
+                .SetPriority(CacheItemPriority.Normal);
+
+            memoryCache.Set(key, value, options);
         }
+
+        return Task.CompletedTask;
     }
 
     public void Dispose()

@@ -2,6 +2,8 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 using ProxyServer.FunctionalTests.TestServer;
 using ProxyServer.FunctionalTests.Models;
 using Xunit;
@@ -26,9 +28,9 @@ public class ProxyServerFunctionalTests : IDisposable
     private readonly IHost _proxyServer;
     private readonly HttpClient _httpClient;
     private readonly string _testDbPath;
+    private readonly int _testServerPort;
+    private readonly int _proxyServerPort;
 
-    private const int TestServerPort = 11411;
-    private const int ProxyServerPort = 15000;
     private const string TestPassword = "testpass123";
 
     /// <summary>
@@ -41,18 +43,22 @@ public class ProxyServerFunctionalTests : IDisposable
         _httpClient = new HttpClient();
         _httpClient.Timeout = TimeSpan.FromSeconds(30); // Add timeout to prevent hanging
 
+        // Use random available ports to avoid conflicts
+        _testServerPort = GetAvailablePort();
+        _proxyServerPort = GetAvailablePort();
+
         // Create unique database path for this test instance
         _testDbPath = Path.Combine(Path.GetTempPath(), $"test_proxy_cache_{Guid.NewGuid()}.db");
 
         // Start test server
-        _testServer = TestServerHostBuilder.CreateTestServer(TestServerPort);
+        _testServer = TestServerHostBuilder.CreateTestServer(_testServerPort);
         _testServer.StartAsync().Wait();
-        _output.WriteLine($"Test server started on port {TestServerPort}");
+        _output.WriteLine($"Test server started on port {_testServerPort}");
 
         // Start proxy server
         _proxyServer = CreateProxyServer();
         _proxyServer.StartAsync().Wait();
-        _output.WriteLine($"Proxy server started on port {ProxyServerPort}");
+        _output.WriteLine($"Proxy server started on port {_proxyServerPort}");
 
         // Small delay for complete server initialization
         Thread.Sleep(1000);
@@ -236,7 +242,7 @@ public class ProxyServerFunctionalTests : IDisposable
     public async Task ProxyServer_HealthCheck_ShouldReturnHealthStatus()
     {
         // Act
-        var response = await _httpClient.GetAsync($"http://localhost:{ProxyServerPort}/health");
+        var response = await _httpClient.GetAsync($"http://localhost:{_proxyServerPort}/health");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -260,7 +266,7 @@ public class ProxyServerFunctionalTests : IDisposable
         Assert.False(string.IsNullOrEmpty(uptime.GetString()));
 
         Assert.True(healthData.TryGetProperty("upstreamUrl", out var upstream));
-        Assert.Equal($"http://localhost:{TestServerPort}", upstream.GetString());
+        Assert.Equal($"http://localhost:{_testServerPort}", upstream.GetString());
 
         _output.WriteLine("✓ Health check endpoint working correctly");
     }
@@ -272,7 +278,7 @@ public class ProxyServerFunctionalTests : IDisposable
     public async Task ProxyServer_Ping_ShouldReturnOkStatus()
     {
         // Act
-        var response = await _httpClient.GetAsync($"http://localhost:{ProxyServerPort}/ping");
+        var response = await _httpClient.GetAsync($"http://localhost:{_proxyServerPort}/ping");
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -310,7 +316,7 @@ public class ProxyServerFunctionalTests : IDisposable
         var startTime = DateTime.UtcNow;
 
         // Create request with manual handling to test streaming
-        var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{ProxyServerPort}/api/StringReverse/stream")
+        var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{_proxyServerPort}/api/StringReverse/stream")
         {
             Content = requestContent
         };
@@ -564,7 +570,7 @@ public class ProxyServerFunctionalTests : IDisposable
     /// <returns>The HTTP response from the proxy server</returns>
     private async Task<HttpResponseMessage> MakeProxyRequest(string path, HttpContent content)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{ProxyServerPort}{path}")
+        var request = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{_proxyServerPort}{path}")
         {
             Content = content
         };
@@ -584,7 +590,7 @@ public class ProxyServerFunctionalTests : IDisposable
     /// <returns>The HTTP response from the proxy server</returns>
     private async Task<HttpResponseMessage> MakeUnauthenticatedProxyRequest(string path, HttpContent content)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{ProxyServerPort}{path}")
+        var request = new HttpRequestMessage(HttpMethod.Post, $"http://localhost:{_proxyServerPort}{path}")
         {
             Content = content
         };
@@ -627,7 +633,7 @@ public class ProxyServerFunctionalTests : IDisposable
     /// <returns>Test server statistics</returns>
     private async Task<TestServerStats> GetTestServerStats()
     {
-        var response = await _httpClient.GetAsync($"http://localhost:{TestServerPort}/api/StringReverse/stats");
+        var response = await _httpClient.GetAsync($"http://localhost:{_testServerPort}/api/StringReverse/stats");
         return await DeserializeResponse<TestServerStats>(response);
     }
 
@@ -636,7 +642,7 @@ public class ProxyServerFunctionalTests : IDisposable
     /// </summary>
     private async Task ResetTestServerStats()
     {
-        await _httpClient.PostAsync($"http://localhost:{TestServerPort}/api/StringReverse/reset", null);
+        await _httpClient.PostAsync($"http://localhost:{_testServerPort}/api/StringReverse/reset", null);
     }
 
     /// <summary>
@@ -647,10 +653,10 @@ public class ProxyServerFunctionalTests : IDisposable
     {
         var proxySettings = new ProxySettings
         {
-            UpstreamUrl = $"http://localhost:{TestServerPort}",
+            UpstreamUrl = $"http://localhost:{_testServerPort}",
             EnableMemoryCache = true,
             EnableDiskCache = true,
-            Port = ProxyServerPort,
+            Port = _proxyServerPort,
             AllowedCredentials = new List<CredentialPair>
             {
                 new() { IPs = ["*"], Passwords = [TestPassword] }
@@ -662,12 +668,28 @@ public class ProxyServerFunctionalTests : IDisposable
         };
 
         var builder = WebApplication.CreateBuilder();
+
+        // Configure logging for tests
+        builder.Logging.AddConsole().SetMinimumLevel(LogLevel.Warning);
+
         builder.Services.AddProxyServices(proxySettings);
-        builder.WebHost.UseUrls($"http://localhost:{ProxyServerPort}");
+        builder.WebHost.UseUrls($"http://localhost:{_proxyServerPort}");
 
         var app = builder.Build();
         app.UseProxyServer();
 
         return app;
+    }
+
+    /// <summary>
+    /// Gets an available port for testing
+    /// </summary>
+    /// <returns>An available port number</returns>
+    private static int GetAvailablePort()
+    {
+        using var socket = new System.Net.Sockets.Socket(System.Net.Sockets.AddressFamily.InterNetwork,
+            System.Net.Sockets.SocketType.Stream, System.Net.Sockets.ProtocolType.Tcp);
+        socket.Bind(new System.Net.IPEndPoint(System.Net.IPAddress.Loopback, 0));
+        return ((System.Net.IPEndPoint)socket.LocalEndPoint!).Port;
     }
 }

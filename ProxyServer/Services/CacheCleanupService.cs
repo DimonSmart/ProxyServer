@@ -2,8 +2,11 @@ using DimonSmart.ProxyServer.Interfaces;
 
 namespace DimonSmart.ProxyServer.Services;
 
+/// <summary>
+/// Background service for cleaning up expired cache entries
+/// </summary>
 public class CacheCleanupService(
-    IExtendedCacheService diskCache,
+    IExtendedCacheService diskCacheService,
     ProxySettings settings,
     ILogger<CacheCleanupService> logger) : BackgroundService
 {
@@ -27,10 +30,10 @@ public class CacheCleanupService(
                 await Task.Delay(cleanupInterval, cancellationToken);
 
                 logger.LogDebug("Starting cache cleanup...");
-                await diskCache.CleanupExpiredAsync();
+                await diskCacheService.CleanupExpiredAsync();
 
                 // Check cache size and warn if it's getting large
-                var currentSize = await diskCache.GetSizeAsync();
+                var currentSize = await diskCacheService.GetSizeAsync();
                 var maxSize = _settings.DiskCache.MaxSizeMB * 1024 * 1024; // Convert MB to bytes
 
                 if (currentSize > maxSize * 0.8) // Warn at 80% capacity

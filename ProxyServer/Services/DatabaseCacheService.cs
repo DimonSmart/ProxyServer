@@ -4,16 +4,20 @@ using System.Text.Json;
 
 namespace DimonSmart.ProxyServer.Services;
 
-public class DatabaseCacheService : IExtendedCacheService, IDisposable
+/// <summary>
+/// Disk-based cache service using SQLite database
+/// </summary>
+public class DatabaseCacheService : ChainedCacheService, IExtendedCacheService, IDisposable
 {
     private readonly string _connectionString;
-    private readonly ILogger<DatabaseCacheService> _logger;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private bool _disposed = false;
 
-    public DatabaseCacheService(string dbPath, ILogger<DatabaseCacheService> logger)
+    public ILogger<DatabaseCacheService> _logger { get; }
+
+    public DatabaseCacheService(string dbPath, ProxySettings settings, ILogger<DatabaseCacheService> logger) : base()
     {
-        _logger = logger;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         // Ensure directory exists
         var directory = Path.GetDirectoryName(dbPath);
@@ -60,7 +64,7 @@ public class DatabaseCacheService : IExtendedCacheService, IDisposable
         }
     }
 
-    public async Task<T?> GetAsync<T>(string key) where T : class
+    protected override async Task<T?> GetImplementationAsync<T>(string key) where T : class
     {
         if (_disposed) return null;
 
@@ -70,7 +74,6 @@ public class DatabaseCacheService : IExtendedCacheService, IDisposable
             using var connection = new SqliteConnection(_connectionString);
             await connection.OpenAsync();
 
-            // First check if the item exists and is not expired
             var selectSql = @"
                 SELECT data, type, expires_at 
                 FROM cache_entries 
@@ -99,6 +102,7 @@ public class DatabaseCacheService : IExtendedCacheService, IDisposable
             if (type == typeof(T).FullName)
             {
                 var json = System.Text.Encoding.UTF8.GetString(data);
+                _logger.LogDebug("Disk cache hit: {Key}", key);
                 return JsonSerializer.Deserialize<T>(json);
             }
 
@@ -115,7 +119,7 @@ public class DatabaseCacheService : IExtendedCacheService, IDisposable
         }
     }
 
-    public async Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
+    protected override async Task SetImplementationAsync<T>(string key, T value, TimeSpan expiration) where T : class
     {
         if (_disposed) return;
 
@@ -144,6 +148,7 @@ public class DatabaseCacheService : IExtendedCacheService, IDisposable
             command.Parameters.AddWithValue("@size_bytes", data.Length);
 
             await command.ExecuteNonQueryAsync();
+            _logger.LogDebug("Stored in disk cache: {Key}", key);
         }
         catch (Exception ex)
         {
@@ -155,7 +160,7 @@ public class DatabaseCacheService : IExtendedCacheService, IDisposable
         }
     }
 
-    public async Task ClearAsync()
+    protected override async Task ClearImplementationAsync()
     {
         if (_disposed) return;
 
@@ -173,7 +178,7 @@ public class DatabaseCacheService : IExtendedCacheService, IDisposable
             var vacuumCommand = new SqliteCommand("VACUUM", connection);
             await vacuumCommand.ExecuteNonQueryAsync();
 
-            _logger.LogInformation("Cache cleared");
+            _logger.LogInformation("Disk cache cleared");
         }
         catch (Exception ex)
         {

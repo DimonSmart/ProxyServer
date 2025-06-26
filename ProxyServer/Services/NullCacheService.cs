@@ -5,19 +5,23 @@ namespace DimonSmart.ProxyServer.Services;
 /// <summary>
 /// Null cache service that doesn't cache anything
 /// </summary>
-public class NullCacheService : ICacheService
+public class NullCacheService : ChainedCacheService
 {
-    public Task<T?> GetAsync<T>(string key) where T : class
+    public NullCacheService() : base()
+    {
+    }
+
+    protected override Task<T?> GetImplementationAsync<T>(string key) where T : class
     {
         return Task.FromResult<T?>(null);
     }
 
-    public Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
+    protected override Task SetImplementationAsync<T>(string key, T value, TimeSpan expiration) where T : class
     {
         return Task.CompletedTask;
     }
 
-    public Task ClearAsync()
+    protected override Task ClearImplementationAsync()
     {
         return Task.CompletedTask;
     }
