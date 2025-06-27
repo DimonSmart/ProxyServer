@@ -3,6 +3,7 @@ using DimonSmart.ProxyServer.Models;
 
 namespace DimonSmart.ProxyServer.Middleware;
 
+#pragma warning disable CS9113 // Parameter 'next' is unread (terminal middleware)
 public class ProxyMiddleware(
     RequestDelegate next,
     IProxyService proxyService,
@@ -12,6 +13,7 @@ public class ProxyMiddleware(
     ICachePolicyService cachePolicyService,
     ProxySettings settings,
     ILogger<ProxyMiddleware> logger)
+#pragma warning restore CS9113
 {
     private readonly ProxySettings _settings = settings;
     private readonly ILogger<ProxyMiddleware> _logger = logger;
