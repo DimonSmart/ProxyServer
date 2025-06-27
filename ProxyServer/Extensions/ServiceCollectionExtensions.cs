@@ -23,6 +23,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICachePolicyService, CachePolicyService>();
         services.AddSingleton<ICacheKeyService, CacheKeyService>();
         services.AddSingleton<IResponseWriterService, ResponseWriterService>();
+        services.AddSingleton<CacheDumpService>();
+        services.AddSingleton<CommandLineService>();
         services.AddScoped<ExceptionHandlingMiddleware>();
 
         // Configure HttpClient with custom timeout for upstream requests
