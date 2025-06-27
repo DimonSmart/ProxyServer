@@ -1,6 +1,5 @@
 using DimonSmart.ProxyServer.Interfaces;
 using Microsoft.Extensions.Options;
-using System.Text;
 
 namespace DimonSmart.ProxyServer.Services;
 
@@ -41,23 +40,6 @@ public class CachePolicyService(IOptions<ProxySettings> settings, ILogger<CacheP
             return false;
         }
 
-        // Don't cache requests with certain headers (except for test credentials)
-        if (request.Headers.ContainsKey("Authorization"))
-        {
-            var authHeader = request.Headers["Authorization"].ToString();
-
-            // Allow caching for test credentials (for functional tests)
-            if (authHeader.StartsWith("Basic ") && IsTestCredentials(authHeader))
-            {
-                logger.LogInformation("CanCache: Test credentials detected, allowing caching");
-            }
-            else
-            {
-                logger.LogInformation("CanCache: Request has Authorization header");
-                return false;
-            }
-        }
-
         if (request.Headers.ContainsKey("Cache-Control") &&
             request.Headers["Cache-Control"].ToString().Contains("no-cache"))
         {
@@ -69,19 +51,4 @@ public class CachePolicyService(IOptions<ProxySettings> settings, ILogger<CacheP
         return true;
     }
 
-    private static bool IsTestCredentials(string authHeader)
-    {
-        try
-        {
-            var encodedCredentials = authHeader.Substring("Basic ".Length).Trim();
-            var decodedCredentials = Encoding.UTF8.GetString(Convert.FromBase64String(encodedCredentials));
-
-            // Check if these are test credentials (user:testpass123)
-            return decodedCredentials == "user:testpass123";
-        }
-        catch
-        {
-            return false;
-        }
-    }
 }
