@@ -60,6 +60,15 @@ dotnet run config
 
 # Clear all cached data
 dotnet run clear-cache
+
+# Export cache contents to JSON
+dotnet run dump
+
+# Export cache to file
+dotnet run dump cache_export.json
+
+# Export filtered cache entries
+dotnet run dump cache_export.json filter_text
 ```
 
 #### Available Commands
@@ -67,6 +76,10 @@ dotnet run clear-cache
 - **`help`**: Display help information and available commands
 - **`config`**: Show current configuration including cache settings, ports, and file locations
 - **`clear-cache`**: Clear all cached data from both memory and disk caches
+- **`dump`**: Export cache contents to JSON format with optional filtering and file output
+  - `dump` - Output all cache entries to console
+  - `dump filename.json` - Export cache to specified file
+  - `dump filename.json filter` - Export filtered entries (keys containing "filter" text)
 
 ## CI/CD
 
@@ -116,4 +129,35 @@ The test API provides monitoring endpoints:
 
 - `GET /api/StringReverse/stats` - call statistics
 - `POST /api/StringReverse/reset` - reset counters
+
+## Cache Management
+
+### Cache Export Format
+
+The `dump` command exports cache data in the following JSON format:
+
+```json
+{
+  "dump_timestamp": "2025-06-27T10:11:56.365323+00:00",
+  "total_entries": 9,
+  "filtered_entries": 9,
+  "filter": "filter_text_or_null",
+  "entries": [
+    {
+      "key": "cache_key_base64_encoded",
+      "type": "DimonSmart.ProxyServer.Models.CachedResponse",
+      "data": "{\"StatusCode\":200,\"Headers\":{...},\"Body\":\"...\"}",
+      "expires_at": "2025-07-04T08:34:20+00:00",
+      "created_at": "2025-06-27T08:34:20+00:00",
+      "hit_count": 13
+    }
+  ]
+}
+```
+
+**Key Features of Cache Export:**
+- **Unicode Preservation**: National characters (русский, 中文, etc.) are preserved in their original form for better readability
+- **Complete Data**: Includes cache metadata (creation time, expiration, hit count)
+- **Filtering**: Supports key-based filtering to export specific cache entries
+- **Flexible Output**: Can export to console or file as needed
 

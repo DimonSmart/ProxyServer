@@ -24,13 +24,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICacheKeyService, CacheKeyService>();
         services.AddSingleton<IResponseWriterService, ResponseWriterService>();
         services.AddScoped<ExceptionHandlingMiddleware>();
-        
+
         // Configure HttpClient with custom timeout for upstream requests
         services.AddHttpClient<IProxyService, ProxyService>(client =>
         {
             client.Timeout = settings.UpstreamTimeoutSeconds > 0 ? TimeSpan.FromSeconds(settings.UpstreamTimeoutSeconds) : Timeout.InfiniteTimeSpan;
         });
-        
+
         services.AddControllers();
 
         ConfigureMemoryCacheIfEnabled(services, settings);

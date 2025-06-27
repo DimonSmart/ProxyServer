@@ -1,4 +1,6 @@
 using DimonSmart.ProxyServer.Interfaces;
+using DimonSmart.ProxyServer.Models;
+using System.Text.Json;
 
 namespace DimonSmart.ProxyServer.Services;
 
@@ -39,6 +41,7 @@ public class CommandLineService
             "help" => ShowHelp(),
             "config" => ShowConfig(),
             "clear-cache" => await ClearCacheAsync(),
+            "dump" => await DumpCacheAsync(args.Skip(1).ToArray()),
             _ => ShowUnknownCommand(command)
         };
     }
@@ -52,11 +55,15 @@ public class CommandLineService
         Console.WriteLine("  help           Show this help message");
         Console.WriteLine("  config         Show configuration information");
         Console.WriteLine("  clear-cache    Clear all cached data");
+        Console.WriteLine("  dump           Dump cache contents to JSON");
         Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.WriteLine("  ProxyServer help");
         Console.WriteLine("  ProxyServer config");
         Console.WriteLine("  ProxyServer clear-cache");
+        Console.WriteLine("  ProxyServer dump");
+        Console.WriteLine("  ProxyServer dump output.json");
+        Console.WriteLine("  ProxyServer dump output.json filter_text");
         return 0;
     }
 
@@ -103,6 +110,81 @@ public class CommandLineService
         {
             Console.WriteLine($"Error clearing cache: {ex.Message}");
             _logger.LogError(ex, "Error clearing cache via command line");
+            return 1;
+        }
+    }
+
+    private async Task<int> DumpCacheAsync(string[] args)
+    {
+        try
+        {
+            string? outputFile = null;
+            string? filter = null;
+
+            // Parse arguments
+            if (args.Length > 0 && !string.IsNullOrWhiteSpace(args[0]))
+            {
+                outputFile = args[0];
+            }
+
+            if (args.Length > 1 && !string.IsNullOrWhiteSpace(args[1]))
+            {
+                filter = args[1];
+            }
+
+            // Check if cache service supports extended operations
+            if (_cacheService is not IExtendedCacheService extendedCache)
+            {
+                Console.WriteLine("Cache service does not support dump operations.");
+                return 1;
+            }
+
+            Console.WriteLine("Retrieving cache entries...");
+            var entries = await extendedCache.GetAllEntriesAsync(filter);
+
+            var dump = new CacheDump
+            {
+                DumpTimestamp = DateTimeOffset.UtcNow,
+                TotalEntries = entries.Count,
+                FilteredEntries = entries.Count,
+                Filter = filter,
+                Entries = entries
+            };
+
+            // Configure JSON options for better readability
+            var jsonOptions = new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping // Preserve Unicode characters
+            };
+
+            var json = JsonSerializer.Serialize(dump, jsonOptions);
+
+            if (!string.IsNullOrWhiteSpace(outputFile))
+            {
+                await File.WriteAllTextAsync(outputFile, json, System.Text.Encoding.UTF8);
+                Console.WriteLine($"Cache dump written to: {Path.GetFullPath(outputFile)}");
+            }
+            else
+            {
+                Console.WriteLine(json);
+            }
+
+            Console.WriteLine($"Total entries: {entries.Count}");
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                Console.WriteLine($"Filter applied: {filter}");
+            }
+
+            _logger.LogInformation("Cache dump completed - {Count} entries, filter: {Filter}, output: {Output}",
+                entries.Count, filter ?? "none", outputFile ?? "console");
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error dumping cache: {ex.Message}");
+            _logger.LogError(ex, "Error dumping cache via command line");
             return 1;
         }
     }

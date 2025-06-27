@@ -1,3 +1,5 @@
+using DimonSmart.ProxyServer.Models;
+
 namespace DimonSmart.ProxyServer.Interfaces;
 
 /// <summary>
@@ -7,4 +9,5 @@ public interface IExtendedCacheService : ICacheService
 {
     Task CleanupExpiredAsync();
     Task<long> GetSizeAsync();
+    Task<List<CacheEntry>> GetAllEntriesAsync(string? filter = null);
 }

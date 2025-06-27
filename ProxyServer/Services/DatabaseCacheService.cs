@@ -1,4 +1,5 @@
 using DimonSmart.ProxyServer.Interfaces;
+using DimonSmart.ProxyServer.Models;
 using Microsoft.Data.Sqlite;
 using System.Text.Json;
 
@@ -10,6 +11,7 @@ namespace DimonSmart.ProxyServer.Services;
 public class DatabaseCacheService : ICacheService, IExtendedCacheService, IDisposable
 {
     private readonly string _connectionString;
+    private readonly string _dbPath;
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private bool _disposed = false;
 
@@ -18,6 +20,7 @@ public class DatabaseCacheService : ICacheService, IExtendedCacheService, IDispo
     public DatabaseCacheService(string dbPath, ProxySettings settings, ILogger<DatabaseCacheService> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _dbPath = dbPath ?? throw new ArgumentNullException(nameof(dbPath));
 
         // Ensure directory exists
         var directory = Path.GetDirectoryName(dbPath);
@@ -26,7 +29,7 @@ public class DatabaseCacheService : ICacheService, IExtendedCacheService, IDispo
             Directory.CreateDirectory(directory);
         }
 
-        _connectionString = $"Data Source={dbPath};Cache=Shared;";
+        _connectionString = $"Data Source={dbPath};";
         InitializeDatabaseAsync().GetAwaiter().GetResult();
     }
 
@@ -252,12 +255,95 @@ public class DatabaseCacheService : ICacheService, IExtendedCacheService, IDispo
         }
     }
 
+    public async Task<List<CacheEntry>> GetAllEntriesAsync(string? filter = null)
+    {
+        var entries = new List<CacheEntry>();
+
+        if (_disposed) return entries;
+
+        await _semaphore.WaitAsync();
+        try
+        {
+            using var connection = new SqliteConnection(_connectionString);
+            await connection.OpenAsync();
+
+            var sql = @"
+                SELECT key, type, data, expires_at, created_at
+                FROM cache_entries 
+                WHERE expires_at > @now";
+
+            var parameters = new List<SqliteParameter>
+            {
+                new("@now", DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+            };
+
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                sql += " AND key LIKE @filter";
+                parameters.Add(new SqliteParameter("@filter", $"%{filter}%"));
+            }
+
+            sql += " ORDER BY created_at DESC";
+
+            using var command = new SqliteCommand(sql, connection);
+            foreach (var param in parameters)
+            {
+                command.Parameters.Add(param);
+            }
+
+            using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                var entry = new CacheEntry
+                {
+                    Key = reader["key"] as string ?? string.Empty,
+                    Type = reader["type"] as string ?? string.Empty,
+                    Data = System.Text.Encoding.UTF8.GetString((byte[])reader["data"]),
+                    ExpiresAt = DateTimeOffset.FromUnixTimeSeconds(Convert.ToInt64(reader["expires_at"])),
+                    CreatedAt = DateTimeOffset.FromUnixTimeSeconds(Convert.ToInt64(reader["created_at"]))
+                };
+
+                entries.Add(entry);
+            }
+
+            _logger.LogDebug("Retrieved {Count} cache entries with filter '{Filter}'",
+                entries.Count, filter ?? "none");
+
+            return entries;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting all cache entries");
+            return entries;
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
     public void Dispose()
     {
-        if (!_disposed)
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+
+        // Wait for any pending operations to complete
+        _semaphore.Wait();
+        try
+        {
+            SqliteConnection.ClearAllPools();
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+        finally
         {
             _semaphore?.Dispose();
-            _disposed = true;
         }
     }
 }
