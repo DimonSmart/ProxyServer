@@ -14,6 +14,11 @@ if (args.Length > 0)
 var settings = LoadSettings();
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure detailed logging for access control
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.SetMinimumLevel(LogLevel.Debug);
+
 builder.Services.AddProxyServices(settings);
 ConfigureWebHost(builder.WebHost, settings);
 
@@ -38,6 +43,24 @@ app.Lifetime.ApplicationStarted.Register(() =>
     }
 
     logger.LogInformation("Upstream URL: {UpstreamUrl}", settings.UpstreamUrl);
+
+    // Log access control configuration
+    if (settings.AllowedCredentials?.Count > 0)
+    {
+        logger.LogInformation("Access Control: ENABLED");
+        foreach (var (credential, index) in settings.AllowedCredentials.Select((c, i) => (c, i)))
+        {
+            var ips = credential.IPs?.Count > 0 ? string.Join(", ", credential.IPs) : "ANY";
+            var passwordCount = credential.Passwords?.Count ?? 0;
+            logger.LogInformation("  Credential Set {Index}: IPs=[{IPs}], Passwords={PasswordCount}",
+                index + 1, ips, passwordCount);
+        }
+    }
+    else
+    {
+        logger.LogWarning("Access Control: DISABLED - All connections allowed");
+    }
+
     logger.LogInformation("Open the proxy URL in your browser to access the proxied server");
     logger.LogInformation("============================");
 });

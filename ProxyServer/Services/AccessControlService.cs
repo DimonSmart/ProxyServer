@@ -56,6 +56,7 @@ public class AccessControlService : IAccessControlService
         // If no credentials are configured, allow all requests.
         if (_settings.AllowedCredentials == null || _settings.AllowedCredentials.Count == 0)
         {
+            _logger.LogDebug("No access control configured - allowing request from IP {RemoteIP}", remoteIp);
             return (true, 200, null);
         }
 
@@ -66,15 +67,22 @@ public class AccessControlService : IAccessControlService
             if (pair.IPs == null || pair.IPs.Count == 0)
             {
                 currentIpAllowed = true;
+                _logger.LogDebug("IP {RemoteIP}: No IP restrictions in this credential pair - allowing", remoteIp);
             }
             else
             {
+                _logger.LogDebug("IP {RemoteIP}: Checking against patterns: {Patterns}", remoteIp, string.Join(", ", pair.IPs));
                 foreach (var pattern in pair.IPs)
                 {
                     if (IsMatch(remoteIp, pattern))
                     {
                         currentIpAllowed = true;
+                        _logger.LogDebug("IP {RemoteIP}: Matched pattern '{Pattern}'", remoteIp, pattern);
                         break;
+                    }
+                    else
+                    {
+                        _logger.LogDebug("IP {RemoteIP}: Did not match pattern '{Pattern}'", remoteIp, pattern);
                     }
                 }
             }
@@ -95,6 +103,7 @@ public class AccessControlService : IAccessControlService
                 if (currentPasswordAllowed)
                 {
                     globalCredentialsAllowed = true;
+                    _logger.LogInformation("Access granted for IP {RemoteIP} - matched credential pair", remoteIp);
                     break;
                 }
             }
@@ -102,10 +111,14 @@ public class AccessControlService : IAccessControlService
 
         if (!globalIpAllowed)
         {
+            _logger.LogWarning("Access denied for IP {RemoteIP}: IP not in allowed list. Configured IP patterns: {AllowedIPs}",
+                remoteIp,
+                string.Join(", ", _settings.AllowedCredentials.SelectMany(c => c.IPs ?? new List<string>())));
             return (false, StatusCodes.Status403Forbidden, "Forbidden: IP not allowed");
         }
         if (!globalCredentialsAllowed)
         {
+            _logger.LogWarning("Access denied for IP {RemoteIP}: Invalid credentials provided", remoteIp);
             return (false, StatusCodes.Status401Unauthorized, "Unauthorized: Invalid credentials");
         }
         return (true, 200, null);
