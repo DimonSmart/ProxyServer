@@ -62,7 +62,7 @@ public class ProxyMiddleware(
             if (ShouldCacheResponse(response))
             {
                 _logger.LogDebug("ProxyMiddleware: Caching streamed response for key: {CacheKey}", cacheKey);
-                var cacheExpiration = GetCacheExpiration();
+                var cacheExpiration = GetCacheExpiration(context);
                 var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body ?? [], response.WasStreamed);
                 await cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
             }
@@ -119,7 +119,7 @@ public class ProxyMiddleware(
             if (ShouldCacheResponse(response))
             {
                 _logger.LogDebug("ProxyMiddleware: Caching response for key: {CacheKey}", cacheKey);
-                var cacheExpiration = GetCacheExpiration();
+                var cacheExpiration = GetCacheExpiration(context);
                 var cachedResponseToStore = new CachedResponse(response.StatusCode, response.Headers, response.Body ?? [], response.WasStreamed);
                 await cacheService.SetAsync(cacheKey, cachedResponseToStore, cacheExpiration);
             }
@@ -187,8 +187,17 @@ public class ProxyMiddleware(
         return response.StatusCode >= 200 && response.StatusCode < 300;
     }
 
-    private TimeSpan GetCacheExpiration()
+    private TimeSpan GetCacheExpiration(HttpContext context)
     {
+        // First check if there's a specific TTL for this endpoint
+        var customTtl = cachePolicyService.GetCacheTtl(context);
+        if (customTtl != TimeSpan.Zero)
+        {
+            _logger.LogDebug("ProxyMiddleware: Using custom TTL for {Method} {Path}: {TtlSeconds}s",
+                context.Request.Method, context.Request.Path, customTtl.TotalSeconds);
+            return customTtl;
+        }
+
         // If both memory and disk cache are enabled, use the longer TTL (disk cache)
         // so that data can survive in disk even after memory cache expires
         if (_settings.EnableMemoryCache && _settings.EnableDiskCache)

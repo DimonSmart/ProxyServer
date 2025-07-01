@@ -108,6 +108,37 @@ public class CommandLineService
         }
         Console.WriteLine($"Listen port: {_settings.Port}");
         Console.WriteLine($"Upstream URL: {_settings.UpstreamUrl}");
+
+        Console.WriteLine();
+        Console.WriteLine("Endpoint-Specific Cache Settings:");
+        Console.WriteLine("==================================");
+
+        if (_settings.EndpointCacheRules?.Count > 0)
+        {
+            Console.WriteLine($"Number of cache rules: {_settings.EndpointCacheRules.Count}");
+            Console.WriteLine();
+
+            foreach (var (rule, index) in _settings.EndpointCacheRules.Select((r, i) => (r, i)))
+            {
+                Console.WriteLine($"Rule {index + 1}:");
+                Console.WriteLine($"  Pattern: {rule.PathPattern}");
+                Console.WriteLine($"  Methods: {(rule.Methods?.Count > 0 ? string.Join(", ", rule.Methods) : "ALL")}");
+                Console.WriteLine($"  TTL: {rule.TtlSeconds} seconds");
+                Console.WriteLine($"  Enabled: {rule.Enabled}");
+                if (!string.IsNullOrEmpty(rule.Description))
+                {
+                    Console.WriteLine($"  Description: {rule.Description}");
+                }
+                Console.WriteLine();
+            }
+        }
+        else
+        {
+            Console.WriteLine("No endpoint-specific cache rules configured.");
+        }
+
+        Console.WriteLine("Endpoint cache uses global cache settings for TTL when no specific rules match.");
+
         return 0;
     }
 

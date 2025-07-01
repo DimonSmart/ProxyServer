@@ -1,4 +1,5 @@
 using DimonSmart.ProxyServer.Interfaces;
+using DimonSmart.ProxyServer.Utilities;
 using Microsoft.Extensions.Options;
 
 namespace DimonSmart.ProxyServer.Services;
@@ -6,7 +7,9 @@ namespace DimonSmart.ProxyServer.Services;
 /// <summary>
 /// Default implementation of cache policy service
 /// </summary>
-public class CachePolicyService(IOptions<ProxySettings> settings, ILogger<CachePolicyService> logger) : ICachePolicyService
+public class CachePolicyService(
+    IOptions<ProxySettings> settings,
+    ILogger<CachePolicyService> logger) : ICachePolicyService
 {
     private readonly ProxySettings _settings = settings.Value;
 
@@ -36,7 +39,7 @@ public class CachePolicyService(IOptions<ProxySettings> settings, ILogger<CacheP
         const int maxCacheableBodySize = 1024 * 1024; // 1MB
         if (request.ContentLength.HasValue && request.ContentLength.Value > maxCacheableBodySize)
         {
-            logger.LogInformation("CanCache: Request body too large for caching: {BodySize} bytes (max: {MaxSize} bytes)", 
+            logger.LogInformation("CanCache: Request body too large for caching: {BodySize} bytes (max: {MaxSize} bytes)",
                 request.ContentLength.Value, maxCacheableBodySize);
             return false;
         }
@@ -60,4 +63,29 @@ public class CachePolicyService(IOptions<ProxySettings> settings, ILogger<CacheP
         return true;
     }
 
+    public TimeSpan GetCacheTtl(HttpContext context)
+    {
+        var request = context.Request;
+        var path = request.Path.Value ?? "";
+        var method = request.Method;
+
+        foreach (var rule in _settings.EndpointCacheRules)
+        {
+            if (!rule.Enabled)
+                continue;
+
+            if (!PatternMatcher.IsMatch(rule.PathPattern, path))
+                continue;
+
+            if (rule.Methods.Count > 0 && !rule.Methods.Contains(method, StringComparer.OrdinalIgnoreCase))
+                continue;
+
+            logger.LogInformation("GetCacheTtl: Found matching rule for {Method} {Path} - TTL: {TtlSeconds}s, Pattern: {Pattern}",
+                method, path, rule.TtlSeconds, rule.PathPattern);
+
+            return TimeSpan.FromSeconds(rule.TtlSeconds);
+        }
+
+        return TimeSpan.Zero;
+    }
 }

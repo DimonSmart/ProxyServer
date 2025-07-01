@@ -27,5 +27,35 @@
     "TtlSeconds": 604800,
     "MaxSizeMB": 1024,
     "CleanupIntervalMinutes": 60
-  }
+  },
+  "EndpointCacheRules": [
+    {
+      "PathPattern": "/api/tags",
+      "Methods": ["GET"],
+      "TtlSeconds": 300,
+      "Description": "Ollama model tags list - short cache for quick model additions",
+      "Enabled": true
+    },
+    {
+      "PathPattern": "/api/models",
+      "Methods": ["GET"],
+      "TtlSeconds": 300,
+      "Description": "Ollama models list - short cache for quick model additions", 
+      "Enabled": true
+    },
+    {
+      "PathPattern": "/api/ps",
+      "Methods": ["GET"],
+      "TtlSeconds": 0,
+      "Description": "Ollama running processes - very short cache",
+      "Enabled": true
+    },
+    {
+      "PathPattern": "/api/version",
+      "Methods": ["GET"],
+      "TtlSeconds": 360,
+      "Description": "Ollama version info - longer cache as it rarely changes",
+      "Enabled": true
+    }
+  ]
 }

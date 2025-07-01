@@ -17,4 +17,5 @@ public class ProxySettings
     public MemoryCacheSettings MemoryCache { get; set; } = new();
     public StreamingCacheSettings StreamingCache { get; set; } = new();
     public DiskCacheSettings DiskCache { get; set; } = new();
+    public List<EndpointCacheRule> EndpointCacheRules { get; set; } = new();
 }
