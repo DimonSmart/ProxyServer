@@ -81,7 +81,7 @@ public class CacheDumpServiceTests
         );
 
         var cachedResponseJson = JsonSerializer.Serialize(cachedResponse);
-        
+
         var entries = new List<CacheEntry>
         {
             new CacheEntry

@@ -5,7 +5,6 @@ using DimonSmart.ProxyServer.Services;
 
 const string SettingsFileName = "settings.json";
 
-// Handle command line arguments
 if (args.Length > 0)
 {
     var exitCode = await HandleCommandLineAsync(args);
@@ -27,9 +26,19 @@ app.Lifetime.ApplicationStarted.Register(() =>
 {
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
     logger.LogInformation("=== Proxy Server Started ===");
-    logger.LogInformation("Proxy URL: http://localhost:{Port}", settings.Port);
+
+    if (settings.ListenOnAllInterfaces)
+    {
+        logger.LogInformation("Proxy URL: http://0.0.0.0:{Port} (listening on all interfaces)", settings.Port);
+        logger.LogInformation("Local access: http://localhost:{Port}", settings.Port);
+    }
+    else
+    {
+        logger.LogInformation("Proxy URL: http://localhost:{Port} (localhost only)", settings.Port);
+    }
+
     logger.LogInformation("Upstream URL: {UpstreamUrl}", settings.UpstreamUrl);
-    logger.LogInformation("Open http://localhost:{Port}/ in your browser to access the proxied server", settings.Port);
+    logger.LogInformation("Open the proxy URL in your browser to access the proxied server");
     logger.LogInformation("============================");
 });
 
@@ -65,8 +74,10 @@ static void ConfigureWebHost(IWebHostBuilder webHost, ProxySettings settings)
 {
     webHost.ConfigureKestrel(options =>
     {
-        // Listen on IPv4
-        options.Listen(System.Net.IPAddress.Loopback, settings.Port, listenOptions =>
+        var ipv4Address = settings.ListenOnAllInterfaces ? System.Net.IPAddress.Any : System.Net.IPAddress.Loopback;
+        var ipv6Address = settings.ListenOnAllInterfaces ? System.Net.IPAddress.IPv6Any : System.Net.IPAddress.IPv6Loopback;
+
+        options.Listen(ipv4Address, settings.Port, listenOptions =>
         {
             if (!string.IsNullOrEmpty(settings.CertificatePath) && !string.IsNullOrEmpty(settings.CertificatePassword))
             {
@@ -74,8 +85,7 @@ static void ConfigureWebHost(IWebHostBuilder webHost, ProxySettings settings)
             }
         });
 
-        // Listen on IPv6
-        options.Listen(System.Net.IPAddress.IPv6Loopback, settings.Port, listenOptions =>
+        options.Listen(ipv6Address, settings.Port, listenOptions =>
         {
             if (!string.IsNullOrEmpty(settings.CertificatePath) && !string.IsNullOrEmpty(settings.CertificatePassword))
             {

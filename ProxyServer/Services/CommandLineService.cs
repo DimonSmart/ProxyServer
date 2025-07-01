@@ -266,7 +266,7 @@ public class CommandLineService
             }
             Console.WriteLine($"Total cache size: {dump.Statistics.TotalSizeBytes:N0} bytes");
             Console.WriteLine($"Expired entries: {dump.Statistics.ExpiredEntries}");
-            
+
             if (dump.Statistics.StatusCodes.Any())
             {
                 Console.WriteLine("Status codes:");
@@ -348,13 +348,13 @@ public class CommandLineService
                     Console.WriteLine($"Streamed: {entry.Response.WasStreamed}");
                     Console.WriteLine($"Created: {entry.Metadata.CreatedAt:yyyy-MM-dd HH:mm:ss}");
                     Console.WriteLine($"Expires: {entry.Metadata.ExpiresAt:yyyy-MM-dd HH:mm:ss} (TTL: {entry.Metadata.TtlRemainingSeconds:F0}s)");
-                    
+
                     // Show headers that might affect caching
                     var interestingHeaders = new[] { "Date", "Server", "X-Request-Id", "Request-Id", "Trace-Id" };
                     var foundHeaders = entry.Response.Headers
                         .Where(h => interestingHeaders.Contains(h.Key, StringComparer.OrdinalIgnoreCase))
                         .ToList();
-                    
+
                     if (foundHeaders.Any())
                     {
                         Console.WriteLine("Headers that might affect caching:");
@@ -381,7 +381,7 @@ public class CommandLineService
 
             Console.WriteLine();
             Console.WriteLine("=== Statistics ===");
-            
+
             if (dump.Statistics.StatusCodes.Any())
             {
                 Console.WriteLine("Status codes:");

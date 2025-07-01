@@ -9,6 +9,7 @@
   "EnableMemoryCache": true,
   "EnableDiskCache": true,
   "Port": 8042,
+  "ListenOnAllInterfaces": false,
   "UpstreamTimeoutSeconds": 1800,
   "CertificatePath": "",
   "CertificatePassword": "",
