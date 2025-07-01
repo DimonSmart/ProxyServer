@@ -32,6 +32,15 @@ public class CachePolicyService(IOptions<ProxySettings> settings, ILogger<CacheP
             return false;
         }
 
+        // Don't cache large requests
+        const int maxCacheableBodySize = 1024 * 1024; // 1MB
+        if (request.ContentLength.HasValue && request.ContentLength.Value > maxCacheableBodySize)
+        {
+            logger.LogInformation("CanCache: Request body too large for caching: {BodySize} bytes (max: {MaxSize} bytes)", 
+                request.ContentLength.Value, maxCacheableBodySize);
+            return false;
+        }
+
         // Don't cache file uploads
         if (!string.IsNullOrEmpty(request.ContentType) &&
             request.ContentType.Contains("multipart/form-data", StringComparison.OrdinalIgnoreCase))

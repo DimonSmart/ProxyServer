@@ -30,20 +30,12 @@ public class CacheKeyService : ICacheKeyService
             keyBuilder.Append(string.Join("&", sortedQuery.Select(kv => $"{kv.Key}={kv.Value}")));
         }
 
-        if (request.ContentLength > 0 && request.ContentLength <= 1024 * 1024) // Limit to 1MB
-        {
-            try
-            {
-                request.EnableBuffering();
-                var body = await new StreamReader(request.Body).ReadToEndAsync();
-                request.Body.Position = 0;
-                keyBuilder.Append($"|{body}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to read request body for cache key generation");
-            }
-        }
+        request.EnableBuffering();
+        var body = await new StreamReader(request.Body).ReadToEndAsync();
+        request.Body.Position = 0;
+
+        keyBuilder.Append($"|{body}");
+        _logger.LogDebug("Generated cache key including request body ({BodySize} bytes)", body?.Length ?? 0);
 
         var key = keyBuilder.ToString();
         using var sha256 = SHA256.Create();
