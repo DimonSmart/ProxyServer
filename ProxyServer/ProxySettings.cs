@@ -18,4 +18,5 @@ public class ProxySettings
     public StreamingCacheSettings StreamingCache { get; set; } = new();
     public DiskCacheSettings DiskCache { get; set; } = new();
     public List<EndpointCacheRule> EndpointCacheRules { get; set; } = new();
+    public CorsSettings Cors { get; set; } = new();
 }

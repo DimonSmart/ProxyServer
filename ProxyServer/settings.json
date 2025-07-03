@@ -57,5 +57,13 @@
       "Description": "Ollama version info - longer cache as it rarely changes",
       "Enabled": true
     }
-  ]
+  ],
+  "Cors": {
+    "Enabled": true,
+    "AllowedOrigins": [],
+    "AllowCredentials": true,
+    "MaxAgeSeconds": 3600,
+    "AdditionalExposedHeaders": [],
+    "AdditionalAllowedHeaders": []
+  }
 }

@@ -9,6 +9,7 @@ public static class ApplicationBuilderExtensions
     public static IApplicationBuilder UseProxyServer(this IApplicationBuilder app)
     {
         app.UseMiddleware<ExceptionHandlingMiddleware>();
+        app.UseMiddleware<CorsMiddleware>();
         app.UseRouting();
         app.UseMiddleware<AccessControlMiddleware>();
 
