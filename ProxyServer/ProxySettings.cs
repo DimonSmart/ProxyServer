@@ -9,6 +9,7 @@ public class ProxySettings
     public bool EnableMemoryCache { get; set; } = true;
     public bool EnableDiskCache { get; set; } = false;
     public int Port { get; set; } = 5000;
+    public int? HttpsPort { get; set; }
     public bool ListenOnAllInterfaces { get; set; } = false;
     public string? CertificatePath { get; set; }
     public string? CertificatePassword { get; set; }

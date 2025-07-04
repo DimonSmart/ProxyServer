@@ -9,10 +9,11 @@
   "EnableMemoryCache": true,
   "EnableDiskCache": true,
   "Port": 8042,
+  "HttpsPort": 8043,
   "ListenOnAllInterfaces": false,
   "UpstreamTimeoutSeconds": 1800,
-  "CertificatePath": "",
-  "CertificatePassword": "",
+  "CertificatePath": "./certificates/proxy.pfx",
+  "CertificatePassword": "your_certificate_password",
   "MemoryCache": {
     "TtlSeconds": 1800,
     "MaxEntries": 10000

@@ -1,7 +1,8 @@
-﻿using System.Text.Json;
-using DimonSmart.ProxyServer;
+﻿using DimonSmart.ProxyServer;
 using DimonSmart.ProxyServer.Extensions;
 using DimonSmart.ProxyServer.Services;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using System.Text.Json;
 
 const string SettingsFileName = "settings.json";
 
@@ -13,8 +14,6 @@ if (args.Length > 0)
 
 var settings = LoadSettings();
 var builder = WebApplication.CreateBuilder(args);
-
-// Configure detailed logging for access control
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
 builder.Logging.SetMinimumLevel(LogLevel.Debug);
@@ -23,37 +22,48 @@ builder.Services.AddProxyServices(settings);
 ConfigureWebHost(builder.WebHost, settings);
 
 var app = builder.Build();
-
 app.UseProxyServer();
 
-// Log the proxy server information on startup
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
     logger.LogInformation("=== Proxy Server Started ===");
 
-    if (settings.ListenOnAllInterfaces)
+    bool hasCert = !string.IsNullOrEmpty(settings.CertificatePath);
+    bool hasHttps = settings.HttpsPort.HasValue && hasCert;
+    string iface = settings.ListenOnAllInterfaces ? "0.0.0.0" : "localhost";
+    var urls = new List<(string Scheme, string Url, string Note)>
     {
-        logger.LogInformation("Proxy URL: http://0.0.0.0:{Port} (listening on all interfaces)", settings.Port);
-        logger.LogInformation("Local access: http://localhost:{Port}", settings.Port);
-    }
-    else
-    {
-        logger.LogInformation("Proxy URL: http://localhost:{Port} (localhost only)", settings.Port);
-    }
+        ("HTTP",  $"http://{iface}:{settings.Port}", settings.ListenOnAllInterfaces ? "(all interfaces)" : "(localhost only)")
+    };
+    if (hasHttps)
+        urls.Add(("HTTPS", $"https://{iface}:{settings.HttpsPort}", settings.ListenOnAllInterfaces ? "(all interfaces)" : "(localhost only)"));
+
+    foreach (var (scheme, url, note) in urls)
+        logger.LogInformation("{Scheme} URL: {Url} {Note}", scheme, url, note);
 
     logger.LogInformation("Upstream URL: {UpstreamUrl}", settings.UpstreamUrl);
 
-    // Log access control configuration
+    if (hasCert)
+    {
+        if (hasHttps)
+            logger.LogInformation("HTTPS: ENABLED with certificate: {CertificatePath}", settings.CertificatePath);
+        else
+            logger.LogWarning("HTTPS: Certificate found but HttpsPort not configured");
+    }
+    else
+    {
+        logger.LogInformation("HTTPS: DISABLED - Using HTTP only");
+    }
+
     if (settings.AllowedCredentials?.Count > 0)
     {
         logger.LogInformation("Access Control: ENABLED");
-        foreach (var (credential, index) in settings.AllowedCredentials.Select((c, i) => (c, i)))
+        foreach (var (cred, idx) in settings.AllowedCredentials.Select((c, i) => (c, i + 1)))
         {
-            var ips = credential.IPs?.Count > 0 ? string.Join(", ", credential.IPs) : "ANY";
-            var passwordCount = credential.Passwords?.Count ?? 0;
-            logger.LogInformation("  Credential Set {Index}: IPs=[{IPs}], Passwords={PasswordCount}",
-                index + 1, ips, passwordCount);
+            var ips = cred.IPs?.Any() == true ? string.Join(", ", cred.IPs) : "ANY";
+            var pwds = cred.Passwords?.Count ?? 0;
+            logger.LogInformation("  Set {Idx}: IPs=[{IPs}], Passwords={Count}", idx, ips, pwds);
         }
     }
     else
@@ -67,53 +77,43 @@ app.Lifetime.ApplicationStarted.Register(() =>
 
 app.Run();
 
+static ProxySettings LoadSettings()
+    => File.Exists(SettingsFileName)
+        ? JsonSerializer.Deserialize<ProxySettings>(File.ReadAllText(SettingsFileName))!
+        : new ProxySettings();
+
+static void ConfigureWebHost(IWebHostBuilder webHost, ProxySettings settings)
+{
+    var addresses = settings.ListenOnAllInterfaces
+        ? new[] { System.Net.IPAddress.Any, System.Net.IPAddress.IPv6Any }
+        : new[] { System.Net.IPAddress.Loopback, System.Net.IPAddress.IPv6Loopback };
+
+    webHost.ConfigureKestrel(opts =>
+    {
+        bool hasCert = !string.IsNullOrEmpty(settings.CertificatePath);
+        foreach (var addr in addresses)
+        {
+            opts.Listen(addr, settings.Port);
+            if (hasCert && settings.HttpsPort.HasValue)
+                opts.Listen(addr, settings.HttpsPort.Value, lo => ConfigureHttps(lo, settings));
+        }
+    });
+}
+
+static void ConfigureHttps(ListenOptions lo, ProxySettings s)
+    => lo.UseHttps(s.CertificatePath!, string.IsNullOrEmpty(s.CertificatePassword)
+        ? null
+        : s.CertificatePassword);
+
 static async Task<int> HandleCommandLineAsync(string[] args)
 {
     var settings = LoadSettings();
-
-    // Create a temporary service collection for command line operations
     var services = new ServiceCollection();
-    services.AddLogging(builder => builder.AddConsole());
+    services.AddLogging(b => b.AddConsole());
     services.AddSingleton(settings);
     services.AddProxyServices(settings);
     services.AddTransient<CommandLineService>();
 
-#pragma warning disable ASP0000 // BuildServiceProvider is acceptable for command line scenarios
-    using var serviceProvider = services.BuildServiceProvider();
-#pragma warning restore ASP0000
-
-    var commandLineService = serviceProvider.GetRequiredService<CommandLineService>();
-    return await commandLineService.ExecuteAsync(args);
-}
-
-static ProxySettings LoadSettings()
-{
-    return File.Exists(SettingsFileName)
-        ? JsonSerializer.Deserialize<ProxySettings>(File.ReadAllText(SettingsFileName))!
-        : new ProxySettings();
-}
-
-static void ConfigureWebHost(IWebHostBuilder webHost, ProxySettings settings)
-{
-    webHost.ConfigureKestrel(options =>
-    {
-        var ipv4Address = settings.ListenOnAllInterfaces ? System.Net.IPAddress.Any : System.Net.IPAddress.Loopback;
-        var ipv6Address = settings.ListenOnAllInterfaces ? System.Net.IPAddress.IPv6Any : System.Net.IPAddress.IPv6Loopback;
-
-        options.Listen(ipv4Address, settings.Port, listenOptions =>
-        {
-            if (!string.IsNullOrEmpty(settings.CertificatePath) && !string.IsNullOrEmpty(settings.CertificatePassword))
-            {
-                listenOptions.UseHttps(settings.CertificatePath, settings.CertificatePassword);
-            }
-        });
-
-        options.Listen(ipv6Address, settings.Port, listenOptions =>
-        {
-            if (!string.IsNullOrEmpty(settings.CertificatePath) && !string.IsNullOrEmpty(settings.CertificatePassword))
-            {
-                listenOptions.UseHttps(settings.CertificatePath, settings.CertificatePassword);
-            }
-        });
-    });
+    using var sp = services.BuildServiceProvider();
+    return await sp.GetRequiredService<CommandLineService>().ExecuteAsync(args);
 }

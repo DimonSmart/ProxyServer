@@ -41,9 +41,90 @@ Configuration is done through the `settings.json` file:
     "MaxSizeMB": 1024,
     "CleanupIntervalMinutes": 60
   },
+  "CertificatePath": "./certificates/proxy.pfx",
+  "CertificatePassword": "your_certificate_password"
+}
+```
+
+### 🔒 HTTPS Setup
+
+To enable HTTPS support, you need to configure SSL certificates. For development, you can create a self-signed certificate:
+
+#### Create Self-Signed Certificate
+
+```powershell
+# Create certificates directory
+mkdir certificates
+
+# Generate self-signed certificate for development
+dotnet dev-certs https -ep ./certificates/proxy.pfx -p your_certificate_password --trust
+```
+
+#### Configuration
+
+Update your `settings.json` to enable both HTTP and HTTPS:
+
+```json
+{
   "Port": 8042,
-  "CertificatePath": "certificate.pfx",
-  "CertificatePassword": "password"
+  "HttpsPort": 8043,
+  "CertificatePath": "./certificates/proxy.pfx",
+  "CertificatePassword": "your_certificate_password"
+}
+```
+
+With this configuration:
+- HTTP will be available at `http://localhost:8042`
+- HTTPS will be available at `https://localhost:8043`
+
+#### Production Certificates
+
+For production environments, use certificates from a trusted Certificate Authority or Let's Encrypt.
+
+To enable HTTPS, you need to configure a certificate. For development, use a self-signed certificate:
+
+#### Create Self-Signed Certificate
+
+1. **Using the provided script (recommended):**
+   ```bash
+   .\create-certificate.ps1
+   ```
+   
+   Or with custom password:
+   ```bash
+   .\create-certificate.ps1 "YourCustomPassword"
+   ```
+
+2. **Manual creation:**
+   ```bash
+   # Create certificates directory
+   mkdir ProxyServer/certificates
+   
+   # Generate development certificate
+   dotnet dev-certs https -ep ./ProxyServer/certificates/proxy.pfx -p your_certificate_password --trust
+   ```
+
+3. **Update settings.json:**
+   ```json
+   {
+     "CertificatePath": "./certificates/proxy.pfx",
+     "CertificatePassword": "your_certificate_password"
+   }
+   ```
+
+4. **Access via HTTPS:**
+   ```
+   https://localhost:8042
+   ```
+
+#### Production Certificate
+
+For production, use a valid certificate from a Certificate Authority or Let's Encrypt:
+
+```json
+{
+  "CertificatePath": "/path/to/your/certificate.pfx",
+  "CertificatePassword": "your_secure_password"
 }
 ```
 
