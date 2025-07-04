@@ -11,8 +11,6 @@ public class ProxySettings
     public int Port { get; set; } = 5000;
     public int? HttpsPort { get; set; }
     public bool ListenOnAllInterfaces { get; set; } = false;
-    public string? CertificatePath { get; set; }
-    public string? CertificatePassword { get; set; }
     public int UpstreamTimeoutSeconds { get; set; } = 1800;
 
     public MemoryCacheSettings MemoryCache { get; set; } = new();

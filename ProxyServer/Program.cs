@@ -29,8 +29,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
     logger.LogInformation("=== Proxy Server Started ===");
 
-    bool hasCert = !string.IsNullOrEmpty(settings.CertificatePath);
-    bool hasHttps = settings.HttpsPort.HasValue && hasCert;
+    bool hasHttps = settings.HttpsPort.HasValue;
     string iface = settings.ListenOnAllInterfaces ? "0.0.0.0" : "localhost";
     var urls = new List<(string Scheme, string Url, string Note)>
     {
@@ -44,12 +43,9 @@ app.Lifetime.ApplicationStarted.Register(() =>
 
     logger.LogInformation("Upstream URL: {UpstreamUrl}", settings.UpstreamUrl);
 
-    if (hasCert)
+    if (hasHttps)
     {
-        if (hasHttps)
-            logger.LogInformation("HTTPS: ENABLED with certificate: {CertificatePath}", settings.CertificatePath);
-        else
-            logger.LogWarning("HTTPS: Certificate found but HttpsPort not configured");
+        logger.LogInformation("HTTPS: ENABLED with development certificate");
     }
     else
     {
@@ -90,20 +86,17 @@ static void ConfigureWebHost(IWebHostBuilder webHost, ProxySettings settings)
 
     webHost.ConfigureKestrel(opts =>
     {
-        bool hasCert = !string.IsNullOrEmpty(settings.CertificatePath);
         foreach (var addr in addresses)
         {
             opts.Listen(addr, settings.Port);
-            if (hasCert && settings.HttpsPort.HasValue)
+            if (settings.HttpsPort.HasValue)
                 opts.Listen(addr, settings.HttpsPort.Value, lo => ConfigureHttps(lo, settings));
         }
     });
 }
 
 static void ConfigureHttps(ListenOptions lo, ProxySettings s)
-    => lo.UseHttps(s.CertificatePath!, string.IsNullOrEmpty(s.CertificatePassword)
-        ? null
-        : s.CertificatePassword);
+    => lo.UseHttps();
 
 static async Task<int> HandleCommandLineAsync(string[] args)
 {
