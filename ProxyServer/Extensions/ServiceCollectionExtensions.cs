@@ -23,14 +23,46 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICachePolicyService, CachePolicyService>();
         services.AddSingleton<ICacheKeyService, CacheKeyService>();
         services.AddSingleton<IResponseWriterService, ResponseWriterService>();
+        services.AddSingleton<IConnectionDiagnosticsService, ConnectionDiagnosticsService>();
+        services.AddSingleton<ISslCertificateService, SslCertificateService>();
         services.AddSingleton<CacheDumpService>();
         services.AddSingleton<CommandLineService>();
         services.AddScoped<ExceptionHandlingMiddleware>();
 
-        // Configure HttpClient with custom timeout for upstream requests
+        // Configure HttpClient with SSL settings and diagnostics
         services.AddHttpClient<IProxyService, ProxyService>(client =>
         {
-            client.Timeout = settings.UpstreamTimeoutSeconds > 0 ? TimeSpan.FromSeconds(settings.UpstreamTimeoutSeconds) : Timeout.InfiniteTimeSpan;
+            client.Timeout = settings.UpstreamTimeoutSeconds > 0
+                ? TimeSpan.FromSeconds(settings.UpstreamTimeoutSeconds)
+                : Timeout.InfiniteTimeSpan;
+        })
+        .ConfigurePrimaryHttpMessageHandler(() =>
+        {
+            var handler = new HttpClientHandler()
+            {
+                UseCookies = false,
+                AllowAutoRedirect = false
+            };
+
+            // Configure SSL/TLS settings for upstream connections
+            if (!settings.Ssl.ValidateUpstreamCertificate)
+            {
+                handler.ServerCertificateCustomValidationCallback = (sender, certificate, chain, sslPolicyErrors) =>
+                {
+                    // Note: This will be logged in console since we don't have DI context here
+                    if (settings.Ssl.EnableSslDebugging && certificate != null)
+                    {
+                        Console.WriteLine($"[SSL DEBUG] Certificate validation bypassed for upstream connection");
+                        Console.WriteLine($"[SSL DEBUG] Certificate Subject: {certificate.Subject}");
+                        Console.WriteLine($"[SSL DEBUG] SSL Policy Errors: {sslPolicyErrors}");
+                    }
+                    return true; // Accept all certificates
+                };
+            }
+
+            handler.SslProtocols = settings.Ssl.AllowedSslProtocols;
+
+            return handler;
         });
 
         services.AddControllers();

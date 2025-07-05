@@ -64,5 +64,13 @@
     "MaxAgeSeconds": 3600,
     "AdditionalExposedHeaders": [],
     "AdditionalAllowedHeaders": []
+  },
+  "Ssl": {
+    "CertificatePath": null,
+    "CertificatePassword": null,
+    "ValidateUpstreamCertificate": false,
+    "AllowedSslProtocolsString": "Tls12,Tls13",
+    "EnableSslDebugging": true,
+    "SelfSignedCertificateSubject": "CN=ProxyServer"
   }
 }

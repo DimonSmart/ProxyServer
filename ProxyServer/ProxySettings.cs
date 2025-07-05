@@ -18,4 +18,5 @@ public class ProxySettings
     public DiskCacheSettings DiskCache { get; set; } = new();
     public List<EndpointCacheRule> EndpointCacheRules { get; set; } = new();
     public CorsSettings Cors { get; set; } = new();
+    public SslSettings Ssl { get; set; } = new();
 }

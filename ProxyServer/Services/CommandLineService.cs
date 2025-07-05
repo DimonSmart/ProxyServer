@@ -107,7 +107,24 @@ public class CommandLineService
             Console.WriteLine($"Cleanup interval: {_settings.DiskCache.CleanupIntervalMinutes} minutes");
         }
         Console.WriteLine($"Listen port: {_settings.Port}");
+        if (_settings.HttpsPort.HasValue)
+        {
+            Console.WriteLine($"HTTPS port: {_settings.HttpsPort}");
+        }
         Console.WriteLine($"Upstream URL: {_settings.UpstreamUrl}");
+
+        // SSL Configuration
+        Console.WriteLine();
+        Console.WriteLine("SSL/TLS Configuration:");
+        Console.WriteLine("=====================");
+        Console.WriteLine($"Certificate path: {_settings.Ssl.CertificatePath ?? "Not configured (will use self-signed)"}");
+        Console.WriteLine($"Validate upstream certificates: {_settings.Ssl.ValidateUpstreamCertificate}");
+        Console.WriteLine($"Allowed SSL protocols: {_settings.Ssl.AllowedSslProtocols}");
+        Console.WriteLine($"SSL debugging enabled: {_settings.Ssl.EnableSslDebugging}");
+        if (!string.IsNullOrEmpty(_settings.Ssl.SelfSignedCertificateSubject))
+        {
+            Console.WriteLine($"Self-signed certificate subject: {_settings.Ssl.SelfSignedCertificateSubject}");
+        }
 
         Console.WriteLine();
         Console.WriteLine("Endpoint-Specific Cache Settings:");

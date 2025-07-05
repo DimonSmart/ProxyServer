@@ -1,19 +1,53 @@
 using DimonSmart.ProxyServer.Interfaces;
 using DimonSmart.ProxyServer.Utilities;
+using System.Diagnostics;
+using System.Security.Authentication;
 
 namespace DimonSmart.ProxyServer.Services;
 
 public class ProxyService : IProxyService
 {
     private readonly HttpClient _httpClient;
+    private readonly IConnectionDiagnosticsService _diagnosticsService;
+    private readonly ILogger<ProxyService> _logger;
+    private readonly ProxySettings _settings;
 
-    public ProxyService(HttpClient httpClient)
+    public ProxyService(
+        HttpClient httpClient, 
+        IConnectionDiagnosticsService diagnosticsService,
+        ILogger<ProxyService> logger,
+        ProxySettings settings)
     {
         _httpClient = httpClient;
+        _diagnosticsService = diagnosticsService;
+        _logger = logger;
+        _settings = settings;
     }
 
     public async Task<ProxyResponse> ForwardRequestAsync(HttpContext context, string targetUrl, CancellationToken cancellationToken = default)
     {
+        var stopwatch = Stopwatch.StartNew();
+        
+        // Log detailed request diagnostics
+        if (_settings.Ssl.EnableSslDebugging)
+        {
+            _diagnosticsService.LogRequestDiagnostics(context, targetUrl);
+            
+            // Run connection diagnostics for first-time connections
+            try
+            {
+                var diagnostics = await _diagnosticsService.DiagnoseConnectionAsync(targetUrl, cancellationToken);
+                if (diagnostics.Error != null)
+                {
+                    _logger.LogWarning("Connection diagnostics detected issues: {Error}", diagnostics.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Connection diagnostics failed, continuing with request");
+            }
+        }
+
         var requestMessage = CreateRequestMessage(context, targetUrl);
 
         try
@@ -23,6 +57,14 @@ public class ProxyService : IProxyService
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken
             );
+
+            stopwatch.Stop();
+
+            // Log response diagnostics
+            if (_settings.Ssl.EnableSslDebugging)
+            {
+                _diagnosticsService.LogResponseDiagnostics(upstreamResponse, stopwatch.Elapsed);
+            }
 
             // Determine if we should stream based on response characteristics
             var shouldStream = ShouldUseStreaming(upstreamResponse, context.Request);
@@ -36,8 +78,40 @@ public class ProxyService : IProxyService
                 return await HandleBufferedResponse(upstreamResponse, cancellationToken);
             }
         }
+        catch (AuthenticationException ex) when (ex.Message.Contains("frame size") || ex.Message.Contains("corrupted frame"))
+        {
+            _diagnosticsService.LogSslException(ex, targetUrl);
+            
+            // Additional analysis for common issues
+            var targetUri = new Uri(targetUrl);
+            var requestScheme = context.Request.Scheme;
+            
+            if (requestScheme == "https" && targetUri.Scheme == "http")
+            {
+                throw new InvalidOperationException(
+                    $"Protocol mismatch detected: Client sent HTTPS request but upstream server '{targetUrl}' uses HTTP. " +
+                    $"Either configure the client to use HTTP or set up SSL termination on the upstream server.", ex);
+            }
+            
+            throw new InvalidOperationException($"SSL/TLS handshake failed with upstream server. " +
+                $"This usually indicates a protocol mismatch (HTTPS client -> HTTP upstream) or certificate issues. " +
+                $"Check logs for detailed diagnostics. Original error: {ex.Message}", ex);
+        }
+        catch (HttpRequestException ex) when (ex.InnerException is AuthenticationException authEx)
+        {
+            _diagnosticsService.LogSslException(authEx, targetUrl);
+            throw new InvalidOperationException($"HTTPS connection authentication failed: {authEx.Message}", ex);
+        }
+        catch (TaskCanceledException ex) when (ex.InnerException is TimeoutException)
+        {
+            stopwatch.Stop();
+            _logger.LogError("Request timeout after {ElapsedMs}ms to {TargetUrl}", stopwatch.ElapsedMilliseconds, targetUrl);
+            throw new HttpRequestException($"Upstream request timed out after {stopwatch.ElapsedMilliseconds}ms", ex);
+        }
         catch (Exception ex)
         {
+            stopwatch.Stop();
+            _logger.LogError(ex, "Proxy request failed after {ElapsedMs}ms to {TargetUrl}", stopwatch.ElapsedMilliseconds, targetUrl);
             throw new HttpRequestException($"Proxy request failed: {ex.Message}", ex);
         }
     }

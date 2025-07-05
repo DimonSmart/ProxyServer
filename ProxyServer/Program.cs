@@ -95,8 +95,25 @@ static void ConfigureWebHost(IWebHostBuilder webHost, ProxySettings settings)
     });
 }
 
-static void ConfigureHttps(ListenOptions lo, ProxySettings s)
-    => lo.UseHttps();
+static void ConfigureHttps(ListenOptions lo, ProxySettings settings)
+{
+    // Create minimal services for certificate loading
+    var logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<Program>();
+    var sslService = new SslCertificateService(settings, LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<SslCertificateService>());
+
+    // Try to load certificate from settings
+    var certificate = sslService.LoadCertificate();
+    
+    if (certificate == null)
+    {
+        logger.LogInformation("No valid certificate found, creating self-signed certificate");
+        certificate = sslService.CreateSelfSignedCertificate();
+    }
+
+    lo.UseHttps(certificate);
+    
+    logger.LogInformation("HTTPS configured with certificate: {Subject}", certificate.Subject);
+}
 
 static async Task<int> HandleCommandLineAsync(string[] args)
 {
@@ -107,6 +124,9 @@ static async Task<int> HandleCommandLineAsync(string[] args)
     services.AddProxyServices(settings);
     services.AddTransient<CommandLineService>();
 
+    // Note: BuildServiceProvider is acceptable here as this is a one-time CLI operation
+#pragma warning disable ASP0000
     using var sp = services.BuildServiceProvider();
+#pragma warning restore ASP0000
     return await sp.GetRequiredService<CommandLineService>().ExecuteAsync(args);
 }
