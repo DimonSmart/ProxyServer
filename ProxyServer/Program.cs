@@ -2,6 +2,7 @@
 using DimonSmart.ProxyServer.Extensions;
 using DimonSmart.ProxyServer.Services;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 
 const string SettingsFileName = "settings.json";
@@ -29,8 +30,8 @@ app.Lifetime.ApplicationStarted.Register(() =>
     var logger = app.Services.GetRequiredService<ILogger<Program>>();
     logger.LogInformation("=== Proxy Server Started ===");
 
-    bool hasHttps = settings.HttpsPort.HasValue;
-    string iface = settings.ListenOnAllInterfaces ? "0.0.0.0" : "localhost";
+    var hasHttps = settings.HttpsPort.HasValue;
+    var iface = settings.ListenOnAllInterfaces ? "0.0.0.0" : "localhost";
     var urls = new List<(string Scheme, string Url, string Note)>
     {
         ("HTTP",  $"http://{iface}:{settings.Port}", settings.ListenOnAllInterfaces ? "(all interfaces)" : "(localhost only)")
@@ -84,35 +85,31 @@ static void ConfigureWebHost(IWebHostBuilder webHost, ProxySettings settings)
         ? new[] { System.Net.IPAddress.Any, System.Net.IPAddress.IPv6Any }
         : new[] { System.Net.IPAddress.Loopback, System.Net.IPAddress.IPv6Loopback };
 
+    // Pre-create certificate once if needed for HTTPS
+    X509Certificate2? sharedCertificate = null;
+    if (settings.HttpsPort.HasValue)
+    {
+        var logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<Program>();
+        var sslService = new SslCertificateService(settings, LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<SslCertificateService>());
+        
+        sharedCertificate = sslService.LoadCertificate();
+        if (sharedCertificate is null)
+        {
+            logger.LogInformation("No valid certificate found, creating self-signed certificate");
+            sharedCertificate = sslService.CreateSelfSignedCertificate();
+        }
+        logger.LogInformation("HTTPS configured with certificate: {Subject}", sharedCertificate.Subject);
+    }
+
     webHost.ConfigureKestrel(opts =>
     {
         foreach (var addr in addresses)
         {
             opts.Listen(addr, settings.Port);
-            if (settings.HttpsPort.HasValue)
-                opts.Listen(addr, settings.HttpsPort.Value, lo => ConfigureHttps(lo, settings));
+            if (settings.HttpsPort.HasValue && sharedCertificate is not null)
+                opts.Listen(addr, settings.HttpsPort.Value, lo => lo.UseHttps(sharedCertificate));
         }
     });
-}
-
-static void ConfigureHttps(ListenOptions lo, ProxySettings settings)
-{
-    // Create minimal services for certificate loading
-    var logger = LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<Program>();
-    var sslService = new SslCertificateService(settings, LoggerFactory.Create(builder => builder.AddConsole()).CreateLogger<SslCertificateService>());
-
-    // Try to load certificate from settings
-    var certificate = sslService.LoadCertificate();
-    
-    if (certificate == null)
-    {
-        logger.LogInformation("No valid certificate found, creating self-signed certificate");
-        certificate = sslService.CreateSelfSignedCertificate();
-    }
-
-    lo.UseHttps(certificate);
-    
-    logger.LogInformation("HTTPS configured with certificate: {Subject}", certificate.Subject);
 }
 
 static async Task<int> HandleCommandLineAsync(string[] args)

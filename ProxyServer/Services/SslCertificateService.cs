@@ -3,29 +3,15 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace DimonSmart.ProxyServer.Services;
 
-public interface ISslCertificateService
+public class SslCertificateService(ProxySettings settings, ILogger<SslCertificateService> logger) : ISslCertificateService
 {
-    X509Certificate2? LoadCertificate();
-    X509Certificate2 CreateSelfSignedCertificate();
-    bool ValidateCertificate(X509Certificate2 certificate);
-}
-
-public class SslCertificateService : ISslCertificateService
-{
-    private readonly ProxySettings _settings;
-    private readonly ILogger<SslCertificateService> _logger;
-
-    public SslCertificateService(ProxySettings settings, ILogger<SslCertificateService> logger)
-    {
-        _settings = settings;
-        _logger = logger;
-    }
+    private readonly ProxySettings _settings = settings;
 
     public X509Certificate2? LoadCertificate()
     {
         if (string.IsNullOrEmpty(_settings.Ssl.CertificatePath))
         {
-            _logger.LogDebug("No certificate path specified in settings");
+            logger.LogDebug("No certificate path specified in settings");
             return null;
         }
 
@@ -33,7 +19,7 @@ public class SslCertificateService : ISslCertificateService
         {
             if (!File.Exists(_settings.Ssl.CertificatePath))
             {
-                _logger.LogWarning("Certificate file not found at: {CertificatePath}", _settings.Ssl.CertificatePath);
+                logger.LogWarning("Certificate file not found at: {CertificatePath}", _settings.Ssl.CertificatePath);
                 return null;
             }
 
@@ -44,9 +30,9 @@ public class SslCertificateService : ISslCertificateService
 
             if (ValidateCertificate(certificate))
             {
-                _logger.LogInformation("Successfully loaded SSL certificate from: {CertificatePath}", _settings.Ssl.CertificatePath);
-                _logger.LogInformation("Certificate Subject: {Subject}", certificate.Subject);
-                _logger.LogInformation("Certificate Valid From: {NotBefore} To: {NotAfter}", 
+                logger.LogInformation("Successfully loaded SSL certificate from: {CertificatePath}", _settings.Ssl.CertificatePath);
+                logger.LogInformation("Certificate Subject: {Subject}", certificate.Subject);
+                logger.LogInformation("Certificate Valid From: {NotBefore} To: {NotAfter}", 
                     certificate.NotBefore, certificate.NotAfter);
                 return certificate;
             }
@@ -55,14 +41,14 @@ public class SslCertificateService : ISslCertificateService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to load SSL certificate from: {CertificatePath}", _settings.Ssl.CertificatePath);
+            logger.LogError(ex, "Failed to load SSL certificate from: {CertificatePath}", _settings.Ssl.CertificatePath);
             return null;
         }
     }
 
     public X509Certificate2 CreateSelfSignedCertificate()
     {
-        _logger.LogInformation("Creating self-signed certificate with subject: {Subject}", _settings.Ssl.SelfSignedCertificateSubject);
+        logger.LogInformation("Creating self-signed certificate with subject: {Subject}", _settings.Ssl.SelfSignedCertificateSubject);
 
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest(
@@ -94,13 +80,31 @@ public class SslCertificateService : ISslCertificateService
             DateTimeOffset.UtcNow.AddDays(-1),
             DateTimeOffset.UtcNow.AddYears(1));
 
-        _logger.LogInformation("Self-signed certificate created successfully");
-        _logger.LogInformation("Certificate Subject: {Subject}", certificate.Subject);
-        _logger.LogInformation("Certificate Valid From: {NotBefore} To: {NotAfter}", 
+        logger.LogInformation("Self-signed certificate created successfully");
+        logger.LogInformation("Certificate Subject: {Subject}", certificate.Subject);
+        logger.LogInformation("Certificate Valid From: {NotBefore} To: {NotAfter}", 
             certificate.NotBefore, certificate.NotAfter);
 
-        // Optionally save the certificate
-        SaveSelfSignedCertificate(certificate);
+        // Save and reload the certificate from disk
+        var certificatePath = SaveSelfSignedCertificate(certificate);
+
+        // Load the certificate from disk with proper key storage flags
+        if (!string.IsNullOrEmpty(certificatePath) && File.Exists(certificatePath))
+        {
+            try
+            {
+                var diskCertificate = new X509Certificate2(
+                    certificatePath, 
+                    "ProxyServer123!");
+                
+                logger.LogInformation("Self-signed certificate reloaded from disk: {Path}", certificatePath);
+                return diskCertificate;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to reload certificate from disk, using in-memory certificate");
+            }
+        }
 
         return certificate;
     }
@@ -112,7 +116,7 @@ public class SslCertificateService : ISslCertificateService
             // Check if certificate has a private key
             if (!certificate.HasPrivateKey)
             {
-                _logger.LogError("Certificate does not have a private key");
+                logger.LogError("Certificate does not have a private key");
                 return false;
             }
 
@@ -120,13 +124,13 @@ public class SslCertificateService : ISslCertificateService
             var now = DateTime.UtcNow;
             if (now < certificate.NotBefore)
             {
-                _logger.LogError("Certificate is not yet valid. Valid from: {NotBefore}", certificate.NotBefore);
+                logger.LogError("Certificate is not yet valid. Valid from: {NotBefore}", certificate.NotBefore);
                 return false;
             }
 
             if (now > certificate.NotAfter)
             {
-                _logger.LogError("Certificate has expired. Valid until: {NotAfter}", certificate.NotAfter);
+                logger.LogError("Certificate has expired. Valid until: {NotAfter}", certificate.NotAfter);
                 return false;
             }
 
@@ -135,7 +139,7 @@ public class SslCertificateService : ISslCertificateService
             if (now.AddDays(expirationWarningDays) > certificate.NotAfter)
             {
                 var daysUntilExpiration = (certificate.NotAfter - now).Days;
-                _logger.LogWarning("Certificate expires in {Days} days on {NotAfter}", 
+                logger.LogWarning("Certificate expires in {Days} days on {NotAfter}", 
                     daysUntilExpiration, certificate.NotAfter);
             }
 
@@ -143,12 +147,12 @@ public class SslCertificateService : ISslCertificateService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Certificate validation failed");
+            logger.LogError(ex, "Certificate validation failed");
             return false;
         }
     }
 
-    private void SaveSelfSignedCertificate(X509Certificate2 certificate)
+    private string? SaveSelfSignedCertificate(X509Certificate2 certificate)
     {
         try
         {
@@ -161,17 +165,20 @@ public class SslCertificateService : ISslCertificateService
             var pfxBytes = certificate.Export(X509ContentType.Pfx, certificatePassword);
             File.WriteAllBytes(certificatePath, pfxBytes);
 
-            _logger.LogInformation("Self-signed certificate saved to: {CertificatePath}", certificatePath);
-            _logger.LogInformation("Certificate password: {Password}", certificatePassword);
-            _logger.LogInformation("You can configure this certificate in settings.json:");
-            _logger.LogInformation("  \"Ssl\": {{");
-            _logger.LogInformation("    \"CertificatePath\": \"{Path}\",", certificatePath.Replace("\\", "\\\\"));
-            _logger.LogInformation("    \"CertificatePassword\": \"{Password}\"", certificatePassword);
-            _logger.LogInformation("  }}");
+            logger.LogInformation("Self-signed certificate saved to: {CertificatePath}", certificatePath);
+            logger.LogInformation("Certificate password: {Password}", certificatePassword);
+            logger.LogInformation("You can configure this certificate in settings.json:");
+            logger.LogInformation("  \"Ssl\": {{");
+            logger.LogInformation("    \"CertificatePath\": \"{Path}\",", certificatePath.Replace("\\", "\\\\"));
+            logger.LogInformation("    \"CertificatePassword\": \"{Password}\"", certificatePassword);
+            logger.LogInformation("  }}");
+            
+            return certificatePath;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to save self-signed certificate to disk");
+            logger.LogWarning(ex, "Failed to save self-signed certificate to disk");
+            return null;
         }
     }
 }
