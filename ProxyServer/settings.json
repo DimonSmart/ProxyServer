@@ -72,5 +72,12 @@
     "AllowedSslProtocolsString": "Tls12,Tls13",
     "EnableSslDebugging": true,
     "SelfSignedCertificateSubject": "CN=ProxyServer"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.Extensions.Http.DefaultHttpClientFactory": "Warning",
+      "System.Net.Http.HttpClient": "Warning"
+    }
   }
 }

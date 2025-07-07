@@ -16,7 +16,7 @@ var settings = LoadSettings();
 var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
-builder.Logging.SetMinimumLevel(LogLevel.Debug);
+builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
 
 builder.Services.AddProxyServices(settings);
 ConfigureWebHost(builder.WebHost, settings);
